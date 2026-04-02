@@ -94,6 +94,7 @@ The script will:
 - run `bun install --frozen-lockfile`
 - create `.env` from `.env.example` if needed
 - create `~/.local/bin/saicode` as a direct command entry
+- ensure `~/.local/bin` is on PATH through `~/.bashrc`
 
 After the script finishes, review `~/saicode/.env`, then run:
 

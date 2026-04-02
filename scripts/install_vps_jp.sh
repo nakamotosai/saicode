@@ -75,6 +75,20 @@ create_link() {
   log "linked $LINK_PATH -> $INSTALL_DIR/bin/saicode"
 }
 
+ensure_path() {
+  local path_line='export PATH="$HOME/.local/bin:$PATH"'
+
+  export PATH="$HOME/.local/bin:$PATH"
+
+  if [[ -f "$HOME/.bashrc" ]] && grep -Fqx "$path_line" "$HOME/.bashrc"; then
+    log "~/.local/bin already present in ~/.bashrc"
+    return
+  fi
+
+  log "adding ~/.local/bin to ~/.bashrc"
+  printf '\n%s\n' "$path_line" >> "$HOME/.bashrc"
+}
+
 print_next_steps() {
   cat <<EOF
 
@@ -85,9 +99,6 @@ Command: $LINK_PATH
 
 Before first real use, review:
   $INSTALL_DIR/.env
-
-If $HOME/.local/bin is not on PATH yet, add this line to ~/.bashrc:
-  export PATH="\$HOME/.local/bin:\$PATH"
 
 Then reload the shell:
   source ~/.bashrc
@@ -100,6 +111,7 @@ main() {
   install_deps
   ensure_env_file
   create_link
+  ensure_path
   print_next_steps
 }
 
