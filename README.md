@@ -2,6 +2,8 @@
 
 `saicode` 是一个基于这份源码壳重构出来的自用型 coding agent CLI/TUI，默认不再走 Claude/Anthropic 登录链路，而是直接接你自己的 OpenAI-compatible provider。
 
+当前这版已经同步到 GitHub 的新基线，`tsc --noEmit --pretty false` 结果为 `0` 错误，可直接用 `bun run check` 做一致性复核。
+
 当前这一版的目标是：
 
 - 品牌统一为 `saicode`
@@ -33,6 +35,18 @@ cpa/opencode/mimo-v2-omni-free
 
 ```bash
 bun install
+```
+
+### 1.1 运行类型检查
+
+```bash
+bun run check
+```
+
+这条命令等价于：
+
+```bash
+bun run typecheck
 ```
 
 ### 2. 配置环境变量
@@ -127,7 +141,7 @@ SAICODE_WEB_SEARCH_FETCH_TOP_K
 - `cliproxyapi` 已挂入 OpenCode free 模型：`qwen3.6-plus-free`、`mimo-v2-pro-free`、`mimo-v2-omni-free`
 - 搜索已切到本地 `WebSearch` 实现，并支持 `sai-search` fallback 与结果页自动抓取
 - 旧的 Claude 专属命令默认隐藏，但仓库里仍有大量历史命名尚未全量清洗
-- 这份源码壳本身的 TypeScript 构建面仍不干净；日常验收应优先看真实 CLI/TUI 运行与目标功能实测
+- 这份源码壳当前的 TypeScript 检查已经清零；日常验收可先跑 `bun run check`，再看真实 CLI/TUI 运行与目标功能实测
 - 这是自用重构起点，不是干净从零设计的新仓库
 
 ## 项目结构
