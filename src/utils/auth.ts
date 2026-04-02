@@ -101,6 +101,16 @@ export function isAnthropicAuthEnabled(): boolean {
   // --bare: API-key-only, never OAuth.
   if (isBareMode()) return false
 
+  // saicode provider mode uses external API-compatible providers and should
+  // not fall back to the Claude login/onboarding flow.
+  if (
+    process.env.SAICODE_PROVIDER ||
+    process.env.SAICODE_MODEL ||
+    process.env.SAICODE_DEFAULT_MODEL
+  ) {
+    return false
+  }
+
   // `claude ssh` remote: ANTHROPIC_UNIX_SOCKET tunnels API calls through a
   // local auth-injecting proxy. The launcher sets CLAUDE_CODE_OAUTH_TOKEN as a
   // placeholder iff the local side is a subscriber (so the remote includes the
@@ -1734,6 +1744,7 @@ export function isUsing3PServices(): boolean {
     process.env.SAICODE_PROVIDER ||
     process.env.SAICODE_MODEL ||
     process.env.SAICODE_DEFAULT_MODEL ||
+    process.env.SAICODE_SMALL_FAST_MODEL ||
     isEnvTruthy(process.env.CLAUDE_CODE_USE_BEDROCK) ||
     isEnvTruthy(process.env.CLAUDE_CODE_USE_VERTEX) ||
     isEnvTruthy(process.env.CLAUDE_CODE_USE_FOUNDRY)
