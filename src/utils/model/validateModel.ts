@@ -165,7 +165,7 @@ function get3PFallbackSuggestion(model: string): string | undefined {
   if (isSaicodeModeEnabled()) {
     const resolved = resolveSaicodeModelId(model)
     if (resolved.includes('397b')) {
-      return 'nvidia/qwen/qwen3.5-122b-a10b'
+      return 'cpa/qwen/qwen3.5-122b-a10b'
     }
     return undefined
   }

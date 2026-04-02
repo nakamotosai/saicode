@@ -9,6 +9,7 @@
 
 import * as fs from 'fs/promises'
 import * as path from 'path'
+import type { Dirent } from 'fs'
 import { logForDebugging } from '../debug.js'
 import type { EnvironmentKind } from '../teleport/environments.js'
 import type { TurnStartTime } from './types.js'
@@ -64,12 +65,12 @@ export async function findModifiedFiles(
   outputsDir: string,
 ): Promise<string[]> {
   // Use recursive flag to get all entries in one call
-  let entries: Awaited<ReturnType<typeof fs.readdir>>
+  let entries: Array<Dirent & { parentPath?: string; path?: string }>
   try {
-    entries = await fs.readdir(outputsDir, {
+    entries = (await fs.readdir(outputsDir, {
       withFileTypes: true,
       recursive: true,
-    })
+    })) as Array<Dirent & { parentPath?: string; path?: string }>
   } catch {
     // Directory doesn't exist or is not accessible
     return []

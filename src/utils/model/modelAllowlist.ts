@@ -2,6 +2,25 @@ import { getSettings_DEPRECATED } from '../settings/settings.js'
 import { isModelAlias, isModelFamilyAlias } from './aliases.js'
 import { parseUserSpecifiedModel } from './model.js'
 import { resolveOverriddenModel } from './modelStrings.js'
+import { getSaicodeModelEntry, isSaicodeModeEnabled } from './saicodeCatalog.js'
+
+function normalizeSaicodeModelForAllowlist(model: string): string {
+  const normalized = model.trim().toLowerCase()
+  if (!isSaicodeModeEnabled()) {
+    return normalized
+  }
+
+  const entry = getSaicodeModelEntry(normalized)
+  if (entry) {
+    return entry.id.toLowerCase()
+  }
+
+  if (normalized.startsWith('cliproxyapi/')) {
+    return `cpa/${normalized.slice('cliproxyapi/'.length)}`
+  }
+
+  return normalized
+}
 
 /**
  * Check if a model belongs to a given family by checking if its name
@@ -108,8 +127,8 @@ export function isModelAllowed(model: string): boolean {
   }
 
   const resolvedModel = resolveOverriddenModel(model)
-  const normalizedModel = resolvedModel.trim().toLowerCase()
-  const normalizedAllowlist = availableModels.map(m => m.trim().toLowerCase())
+  const normalizedModel = normalizeSaicodeModelForAllowlist(resolvedModel)
+  const normalizedAllowlist = availableModels.map(normalizeSaicodeModelForAllowlist)
 
   // Direct match (alias-to-alias or full-name-to-full-name)
   // Skip family aliases that have been narrowed by specific entries —

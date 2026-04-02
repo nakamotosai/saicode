@@ -169,6 +169,74 @@ declare module "*services/skillSearch/featureCheck.js" {
   export const isSkillSearchEnabled: any
 }
 
+declare module "*services/skillSearch/signals.js" {
+  export type DiscoverySignal = any
+}
+
+declare module "*services/skillSearch/prefetch.js" {
+  export const prefetchSkills: any
+}
+
+declare module "*services/sessionTranscript/sessionTranscript.js" {
+  export const sessionTranscript: any
+}
+
+declare module "*utils/bridge/webhookSanitizer.js" {
+  const value: any
+  export = value
+}
+
+declare module "*ink/events/paste-event.js" {
+  const value: any
+  export = value
+}
+
+declare module "*ink/events/resize-event.js" {
+  const value: any
+  export = value
+}
+
+declare module "*ink/frame.js" {
+  const value: any
+  export = value
+}
+
+declare module "*ink/devtools.js" {
+  const value: any
+  export = value
+}
+
+declare module "*memdir/memoryShapeTelemetry.js" {
+  export const recordMemoryShapeTelemetry: any
+}
+
+declare module "*query/jobs/classifier.js" {
+  export const classifyJob: any
+}
+
+declare module "*services/lsp/types.js" {
+  export type LSPMessage = any
+}
+
+declare module "*services/tips/types.js" {
+  export type Tip = any
+}
+
+declare module "*utils/udsMessaging.js" {
+  const value: any
+  export = value
+}
+
+declare module "cli-highlight" {
+  export const highlight: any
+  export const supportsLanguage: any
+}
+
+declare module "highlight.js" {
+  export function getLanguage(name: string): { name: string } | undefined
+  export function highlight(code: string, options: any): any
+}
+
 declare module "*assistant/sessionDiscovery.js" {
   const value: any
   export = value

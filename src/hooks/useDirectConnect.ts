@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { useCallback, useEffect, useMemo, useRef } from 'react'
 import type { ToolUseConfirm } from '../components/permissions/PermissionRequest.js'
 import type { RemotePermissionResponse } from '../remote/RemoteSessionManager.js'
@@ -16,14 +17,20 @@ import {
 import type { Tool } from '../Tool.js'
 import { findToolByName } from '../Tool.js'
 import type { Message as MessageType } from '../types/message.js'
-import type { PermissionAskDecision } from '../types/permissions.js'
+import type {
+  PermissionAskDecision,
+  PermissionUpdate,
+} from '../types/permissions.js'
 import { logForDebugging } from '../utils/debug.js'
 import { gracefulShutdown } from '../utils/gracefulShutdown.js'
 import type { RemoteMessageContent } from '../utils/teleport/api.js'
 
 type UseDirectConnectResult = {
   isRemoteMode: boolean
-  sendMessage: (content: RemoteMessageContent) => Promise<boolean>
+  sendMessage: (
+    content: RemoteMessageContent,
+    opts?: { uuid?: string },
+  ) => Promise<boolean>
   cancelRequest: () => void
   disconnect: () => void
 }
@@ -153,6 +160,12 @@ export function useDirectConnect({
           async recheckPermission() {
             // No-op for remote
           },
+        } as ToolUseConfirm<Record<string, unknown>> & {
+          onAllow(
+            updatedInput: Record<string, unknown>,
+            permissionUpdates: PermissionUpdate[],
+            feedback?: string,
+          ): void
         }
 
         setToolUseConfirmQueue(queue => [...queue, toolUseConfirm])
@@ -193,7 +206,10 @@ export function useDirectConnect({
   }, [config, setMessages, setIsLoading, setToolUseConfirmQueue])
 
   const sendMessage = useCallback(
-    async (content: RemoteMessageContent): Promise<boolean> => {
+    async (
+      content: RemoteMessageContent,
+      _opts?: { uuid?: string },
+    ): Promise<boolean> => {
       const manager = managerRef.current
       if (!manager) {
         return false

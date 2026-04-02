@@ -15,6 +15,18 @@ export type OAuthTokenExchangeResponse = {
   expires_in?: number
   scope?: string
   id_token?: string
+  account?: {
+    uuid?: string
+    email_address?: string
+    email?: string
+    [key: string]: unknown
+  }
+  organization?: {
+    uuid?: string
+    organization_type?: string
+    rate_limit_tier?: string
+    [key: string]: unknown
+  }
 }
 
 export type OAuthProfileResponse = Record<string, unknown> & {
@@ -34,7 +46,12 @@ export type OAuthProfileResponse = Record<string, unknown> & {
   }
 }
 
-export type UserRolesResponse = Record<string, unknown>
+export type UserRolesResponse = {
+  organization_role?: string
+  workspace_role?: string
+  organization_name?: string
+  [key: string]: unknown
+}
 
 export type OAuthTokens = {
   accessToken: string

@@ -1,61 +1,65 @@
-# saicode lite 裁剪 Spec
+# saicode repair Spec
 
 ## Goal
 
-把当前 `saicode` 收口到“主链路保留、Anthropic 私有产品旁支从实际运行面摘除”的状态。
+把当前 `saicode` 从“主链路混着已删除旧功能、类型面大面积失真”的状态，收敛到“主用 CLI/TUI 能稳定工作、模型面统一为 `cpa/...`、死入口不再拖垮运行面”的状态。
 
 ## Scope
 
 ### In scope
 
-- 从实际可达运行面裁掉这 6 类旧入口：
-  - `chrome`
-  - `computer use`
-  - `bridge / remote-control`
-  - `assistant`
-  - `login/logout/usage/upgrade/passes/privacy-settings` 一类 first-party 账号与计费面
-  - `desktop/mobile/share/teleport/remote-setup` 一类远端产品壳
-- 保留并不破坏当前主力：
-  - CLI / TUI
-  - provider runtime
-  - model registry
-  - Bash / Read / Edit / Write / Grep / Glob / WebSearch / WebFetch
-  - sessions / permissions / MCP / plugins / skills
-- 同步清掉相关高可见设置项、帮助入口和误导性文案
+- 统一模型面：
+  - `/model`、默认值、说明文案统一为 `cpa/...`
+  - 保留旧 `cliproxyapi/...` 与旧直连 `nvidia/...` 作为兼容别名
+- 封死已删除实现对应的旧入口：
+  - `direct connect`
+  - `ssh remote`
+  - `server mode`
+  - `ccshare resume`
+  - 其他底层文件已删除但命令面仍暴露的旧分支
+- 修复当前最高优先级错误热区：
+  - `src/main.tsx`
+  - `src/screens/REPL.tsx`
+  - `src/ink/components/App.tsx`
+  - `src/utils/messages.ts`
+  - `src/utils/hooks.ts`
+- 优先处理会直接影响以下能力的错误：
+  - 启动
+  - `--help`
+  - `-p/--print`
+  - `/model`
+  - 基础对话主链路
 
 ### Out of scope
 
-- 收缩或删除现有模型列表
-- 新增 GUI / WebUI / fallback 路由
-- 全仓彻底删除所有历史源码文件
-- 重写浏览器自动化或 computer-use 为新实现
+- 全仓 `tsc` 清零
+- 恢复你已经明确删掉的旧模块
+- 恢复 Claude/Anthropic 私有产品旁支
+- 新增新的 provider/runtime 架构
 
 ## Constraints
 
-- 不破坏当前已经跑通的 `cliproxyapi / NVIDIA / WebSearch / WebFetch` 主链路
-- 优先摘除入口、关闭默认行为、清理高可见设置项；不强求本轮物理删除所有深层文件
-- 保持 `saicode` 品牌和 `.saicode / SAICODE.md` 语义不回退
-- 验收以真实 CLI/TUI 行为优先
+- 不补回已删除模块；只能删入口、封口或改成显式不可用
+- 保留新加的：
+  - `cpa/qwen3-coder-plus`
+  - `cpa/vision-model`
+- 原有直连 NVIDIA 模型不再作为主可见模型
+- 若必须改变功能，优先收口旧入口，不做伪兼容
+- 优先以真实 CLI/TUI 可用性为验收，不以单纯类型数字下降为完成标准
 
 ## Acceptance
 
-任务完成时至少满足：
+至少满足以下条件才算这一轮修复达标：
 
-1. `SPEC.md` / `PLAN.md` 与当前“lite 裁剪”目标一致
-2. `saicode -v`、`saicode --help`、`saicode -p "Reply with exactly: ..."` 真实通过
-3. 以下入口从主使用面消失：
-   - `/chrome`
-   - `/assistant`
-   - `/remote-control`
-   - `/login` `/logout`
-   - `/usage` `/upgrade` `/passes` `/privacy-settings`
-   - `/desktop` `/mobile`
-4. `--chrome`、`--assistant`、`--teleport`、`--remote`、`--remote-control` 不再作为可用入口
-5. Chrome / Remote Control 相关设置项和 Usage 页不再出现在设置主界面
-6. 主链路能力不回归
+1. `/model` 真实读回时可见模型使用 `cpa/...`
+2. 旧 `cliproxyapi/...` / `nvidia/...` 配置仍能解析到新模型 ID
+3. `saicode --help` 可正常输出，且不再把已删除实现当作可用主入口
+4. `saicode -p "Reply with exactly: ok"` 能走通当前主 provider 链路
+5. `main.tsx` 不再强依赖已删除文件而导致启动/命令面直接炸掉
+6. 第一优先级热区错误数明显下降，且下降来自主链路而不是无关区域
 
 ## Risks
 
-- 这轮主要是“从运行面摘入口”，不是全仓物理删除，深层文件与类型残留仍可能存在
-- `teleport / remote / bridge / chrome / computer-use` 深层实现仍可能被少量内部模块引用，但不应再对外暴露
-- 未来若要浏览器自动化或 computer use，应该新建 `saicode` 自己的实现，而不是恢复这些旧分支
+- 当前仓库不是单一根因，而是“旧产品壳残留 + 类型漂移 + 缺文件”叠加
+- `REPL.tsx` 和 `App.tsx` 仍可能藏有第二层残留引用，需要分轮修
+- 全仓 `tsc` 即使显著下降，也不代表所有前台行为都恢复，仍要做真实冒烟

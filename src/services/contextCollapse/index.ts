@@ -1,3 +1,9 @@
+import type { AssistantMessage, Message } from '../../types/message.js'
+import { isPromptTooLongMessage } from '../api/errors.js'
+import { createSignal } from '../../utils/signal.js'
+
+const changed = createSignal()
+
 export function isContextCollapseEnabled(): boolean {
   return false
 }
@@ -46,4 +52,36 @@ export function maybeCollapseContext<T>(value: T): T {
 
 export function collapseContext<T>(value: T): T {
   return value
+}
+
+export function initContextCollapse(): void {
+  changed.emit()
+}
+
+export async function applyCollapsesIfNeeded<T extends Message[]>(
+  messages: T,
+  ..._args: unknown[]
+): Promise<{ messages: T }> {
+  return { messages }
+}
+
+export function isWithheldPromptTooLong(
+  message: Message | undefined,
+  predicate: (msg: AssistantMessage) => boolean = isPromptTooLongMessage,
+  ..._args: unknown[]
+): boolean {
+  return message?.type === 'assistant' && predicate(message as AssistantMessage)
+}
+
+export function recoverFromOverflow<T extends Message[]>(
+  messages: T,
+  ..._args: unknown[]
+): { messages: T; committed: number } {
+  return { messages, committed: 0 }
+}
+
+export const subscribe = changed.subscribe
+
+export function resetContextCollapse(): void {
+  changed.emit()
 }

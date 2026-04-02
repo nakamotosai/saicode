@@ -25,10 +25,40 @@ export * from './sdk/coreTypes.js'
 // Re-export runtime types (callbacks, interfaces with methods)
 export * from './sdk/runtimeTypes.js'
 
-// Re-export settings types (generated from settings JSON schema)
-export type { Settings } from './sdk/settingsTypes.generated.js'
+// Re-export settings types (generated schema is missing in this recovery tree).
+export type Settings = any
 // Re-export tool types (all marked @internal until SDK API stabilizes)
 export * from './sdk/toolTypes.js'
+
+// Recovery compatibility surface for hook-related SDK types that are missing
+// from the local generated tree. Runtime code imports these only as types.
+export type NotificationHookInput = any
+export type PostToolUseHookInput = any
+export type PostToolUseFailureHookInput = any
+export type PermissionDeniedHookInput = any
+export type PreCompactHookInput = any
+export type PostCompactHookInput = any
+export type PreToolUseHookInput = any
+export type SessionStartHookInput = any
+export type SessionEndHookInput = any
+export type SetupHookInput = any
+export type StopHookInput = any
+export type StopFailureHookInput = any
+export type SubagentStartHookInput = any
+export type SubagentStopHookInput = any
+export type TeammateIdleHookInput = any
+export type TaskCreatedHookInput = any
+export type TaskCompletedHookInput = any
+export type ConfigChangeHookInput = any
+export type CwdChangedHookInput = any
+export type FileChangedHookInput = any
+export type InstructionsLoadedHookInput = any
+export type UserPromptSubmitHookInput = any
+export type PermissionRequestHookInput = any
+export type ElicitationHookInput = any
+export type ElicitationResultHookInput = any
+export type PermissionUpdate = any
+export type ExitReason = string
 
 // ============================================================================
 // Functions

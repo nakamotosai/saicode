@@ -9,7 +9,7 @@ import { asSystemPrompt } from './utils/systemPromptType.js'
 type OutputFormat = 'text' | 'json'
 
 const VERSION = '1.0.0'
-const DEFAULT_MODEL = 'nvidia/qwen/qwen3.5-122b-a10b'
+const DEFAULT_MODEL = 'cpa/qwen/qwen3.5-397b-a17b'
 
 function printHelp(): void {
   process.stdout.write(
@@ -33,7 +33,7 @@ function printHelp(): void {
       '  SAICODE_MODEL',
       '  SAICODE_PROVIDER',
       '  SAICODE_CONFIG_DIR',
-      '  NVIDIA_API_KEY / NVIDIA_BASE_URL',
+      '  SAICODE_PROVIDER=cpa',
       '  CLIPROXYAPI_API_KEY / CLIPROXYAPI_BASE_URL',
       '  API_TIMEOUT_MS',
       '',

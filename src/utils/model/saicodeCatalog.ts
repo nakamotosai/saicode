@@ -8,145 +8,155 @@ export type SaicodeModelEntry = {
   aliases: readonly string[]
 }
 
-const DEFAULT_MODEL_ID = 'nvidia/qwen/qwen3.5-397b-a17b'
-const DEFAULT_BEST_MODEL_ID = 'nvidia/qwen/qwen3.5-397b-a17b'
-const DEFAULT_SMALL_FAST_MODEL_ID = 'cliproxyapi/gpt-5.4-mini'
+const DEFAULT_MODEL_ID = 'cpa/qwen/qwen3.5-397b-a17b'
+const DEFAULT_BEST_MODEL_ID = 'cpa/qwen/qwen3.5-397b-a17b'
+const DEFAULT_SMALL_FAST_MODEL_ID = 'cpa/gpt-5.4-mini'
 
 const SAICODE_MODELS: readonly SaicodeModelEntry[] = [
   {
-    id: 'nvidia/qwen/qwen3.5-122b-a10b',
-    provider: 'nvidia',
+    id: 'cpa/qwen/qwen3.5-122b-a10b',
+    provider: 'cpa',
     model: 'qwen/qwen3.5-122b-a10b',
     label: 'Qwen 3.5 122B',
-    description: '默认模型，适合大多数 coding agent 场景',
-    maxOutputTokens: 65536,
-    aliases: ['qwen-fast', 'qwen-122b', 'default'],
-  },
-  {
-    id: 'nvidia/qwen/qwen3.5-397b-a17b',
-    provider: 'nvidia',
-    model: 'qwen/qwen3.5-397b-a17b',
-    label: 'Qwen 3.5 397B',
-    description: '更强的 Qwen 选项，适合更复杂的推理和长任务',
-    maxOutputTokens: 81920,
-    aliases: ['qwen-max', 'qwen-397b', 'qwen397', 'best'],
-  },
-  {
-    id: 'nvidia/nvidia/nemotron-3-super-120b-a12b',
-    provider: 'nvidia',
-    model: 'nvidia/nemotron-3-super-120b-a12b',
-    label: 'Nemotron 120B',
-    description: 'NVIDIA Nemotron，适合技术问答和代码分析',
-    maxOutputTokens: 32768,
-    aliases: ['nemotron'],
-  },
-  {
-    id: 'nvidia/openai/gpt-oss-120b',
-    provider: 'nvidia',
-    model: 'openai/gpt-oss-120b',
-    label: 'GPT-OSS 120B',
-    description: '开放权重路线的高质量通用模型',
-    maxOutputTokens: 32768,
-    aliases: ['gpt-oss'],
-  },
-  {
-    id: 'cliproxyapi/gpt-5.4',
-    provider: 'cliproxyapi',
-    model: 'gpt-5.4',
-    label: 'GPT-5.4',
-    description: 'cliproxyapi 上的 Codex / GPT-5.4 路线',
-    maxOutputTokens: 32768,
-    aliases: ['codex', 'gpt-5.4'],
-  },
-  {
-    id: 'cliproxyapi/gpt-5.4-mini',
-    provider: 'cliproxyapi',
-    model: 'gpt-5.4-mini',
-    label: 'GPT-5.4 Mini',
-    description: '更快更轻的 Codex 线路',
-    maxOutputTokens: 32768,
-    aliases: ['codex-mini', 'gpt-5.4-mini'],
-  },
-  {
-    id: 'cliproxyapi/qwen/qwen3.5-122b-a10b',
-    provider: 'cliproxyapi',
-    model: 'qwen/qwen3.5-122b-a10b',
-    label: 'Cliproxy Qwen 122B',
     description: '经 cliproxyapi 转发的 Qwen 3.5 122B',
     maxOutputTokens: 65536,
-    aliases: ['cliproxy-qwen-fast'],
+    aliases: [
+      'qwen-fast',
+      'qwen-122b',
+      'cliproxyapi/qwen/qwen3.5-122b-a10b',
+      'nvidia/qwen/qwen3.5-122b-a10b',
+      'cliproxy-qwen-fast',
+    ],
   },
   {
-    id: 'cliproxyapi/qwen/qwen3.5-397b-a17b',
-    provider: 'cliproxyapi',
+    id: 'cpa/qwen/qwen3.5-397b-a17b',
+    provider: 'cpa',
     model: 'qwen/qwen3.5-397b-a17b',
-    label: 'Cliproxy Qwen 397B',
+    label: 'Qwen 3.5 397B',
     description: '经 cliproxyapi 转发的 Qwen 3.5 397B',
     maxOutputTokens: 81920,
-    aliases: ['cliproxy-qwen-max'],
+    aliases: [
+      'qwen-max',
+      'qwen-397b',
+      'qwen397',
+      'best',
+      'default',
+      'cliproxyapi/qwen/qwen3.5-397b-a17b',
+      'nvidia/qwen/qwen3.5-397b-a17b',
+      'cliproxy-qwen-max',
+    ],
   },
   {
-    id: 'cliproxyapi/qwen3-coder-plus',
-    provider: 'cliproxyapi',
+    id: 'cpa/qwen3-coder-plus',
+    provider: 'cpa',
     model: 'qwen3-coder-plus',
     label: 'Qwen3 Coder Plus',
     description: '适合编码、重构和代码理解的 Qwen 编码模型',
     maxOutputTokens: 32768,
-    aliases: ['qwen-coder-plus', 'qwen-coder'],
+    aliases: [
+      'qwen-coder-plus',
+      'qwen-coder',
+      'cliproxyapi/qwen3-coder-plus',
+    ],
   },
   {
-    id: 'cliproxyapi/vision-model',
-    provider: 'cliproxyapi',
+    id: 'cpa/vision-model',
+    provider: 'cpa',
     model: 'vision-model',
     label: 'Qwen3 Vision Model',
     description: '适合识图、截图理解和多模态分析的 Qwen 视觉模型',
     maxOutputTokens: 32768,
-    aliases: ['qwen-vision', 'qwen3-vision', 'vision'],
+    aliases: [
+      'qwen-vision',
+      'qwen3-vision',
+      'vision',
+      'cliproxyapi/vision-model',
+    ],
   },
   {
-    id: 'cliproxyapi/nvidia/nemotron-3-super-120b-a12b',
-    provider: 'cliproxyapi',
+    id: 'cpa/nvidia/nemotron-3-super-120b-a12b',
+    provider: 'cpa',
     model: 'nvidia/nemotron-3-super-120b-a12b',
-    label: 'Cliproxy Nemotron 120B',
+    label: 'Nemotron 120B',
     description: '经 cliproxyapi 转发的 Nemotron',
     maxOutputTokens: 32768,
-    aliases: ['cliproxy-nemotron'],
+    aliases: [
+      'nemotron',
+      'cliproxy-nemotron',
+      'cliproxyapi/nvidia/nemotron-3-super-120b-a12b',
+      'nvidia/nvidia/nemotron-3-super-120b-a12b',
+    ],
   },
   {
-    id: 'cliproxyapi/openai/gpt-oss-120b',
-    provider: 'cliproxyapi',
+    id: 'cpa/openai/gpt-oss-120b',
+    provider: 'cpa',
     model: 'openai/gpt-oss-120b',
-    label: 'Cliproxy GPT-OSS 120B',
+    label: 'GPT-OSS 120B',
     description: '经 cliproxyapi 转发的 GPT-OSS',
     maxOutputTokens: 32768,
-    aliases: ['cliproxy-gpt-oss'],
+    aliases: [
+      'gpt-oss',
+      'cliproxy-gpt-oss',
+      'cliproxyapi/openai/gpt-oss-120b',
+      'nvidia/openai/gpt-oss-120b',
+    ],
   },
   {
-    id: 'cliproxyapi/opencode/qwen3.6-plus-free',
-    provider: 'cliproxyapi',
+    id: 'cpa/gpt-5.4',
+    provider: 'cpa',
+    model: 'gpt-5.4',
+    label: 'GPT-5.4',
+    description: 'cliproxyapi 上的 Codex / GPT-5.4 路线',
+    maxOutputTokens: 32768,
+    aliases: ['codex', 'gpt-5.4', 'cliproxyapi/gpt-5.4'],
+  },
+  {
+    id: 'cpa/gpt-5.4-mini',
+    provider: 'cpa',
+    model: 'gpt-5.4-mini',
+    label: 'GPT-5.4 Mini',
+    description: '更快更轻的 Codex 线路',
+    maxOutputTokens: 32768,
+    aliases: ['codex-mini', 'gpt-5.4-mini', 'cliproxyapi/gpt-5.4-mini'],
+  },
+  {
+    id: 'cpa/opencode/qwen3.6-plus-free',
+    provider: 'cpa',
     model: 'qwen3.6-plus-free',
     label: 'OpenCode Qwen 3.6 Plus Free',
     description: '经 cliproxyapi 转发的 OpenCode Zen Qwen 3.6 Plus Free',
     maxOutputTokens: 64000,
-    aliases: ['opencode-qwen-free', 'qwen3.6-free'],
+    aliases: [
+      'opencode-qwen-free',
+      'qwen3.6-free',
+      'cliproxyapi/opencode/qwen3.6-plus-free',
+    ],
   },
   {
-    id: 'cliproxyapi/opencode/mimo-v2-pro-free',
-    provider: 'cliproxyapi',
+    id: 'cpa/opencode/mimo-v2-pro-free',
+    provider: 'cpa',
     model: 'mimo-v2-pro-free',
     label: 'OpenCode MiMo V2 Pro Free',
     description: '经 cliproxyapi 转发的 OpenCode Zen MiMo V2 Pro Free',
     maxOutputTokens: 64000,
-    aliases: ['opencode-mimo-pro-free', 'mimo-pro-free'],
+    aliases: [
+      'opencode-mimo-pro-free',
+      'mimo-pro-free',
+      'cliproxyapi/opencode/mimo-v2-pro-free',
+    ],
   },
   {
-    id: 'cliproxyapi/opencode/mimo-v2-omni-free',
-    provider: 'cliproxyapi',
+    id: 'cpa/opencode/mimo-v2-omni-free',
+    provider: 'cpa',
     model: 'mimo-v2-omni-free',
     label: 'OpenCode MiMo V2 Omni Free',
     description: '经 cliproxyapi 转发的 OpenCode Zen MiMo V2 Omni Free',
     maxOutputTokens: 64000,
-    aliases: ['opencode-mimo-omni-free', 'mimo-omni-free'],
+    aliases: [
+      'opencode-mimo-omni-free',
+      'mimo-omni-free',
+      'cliproxyapi/opencode/mimo-v2-omni-free',
+    ],
   },
 ] as const
 
@@ -220,11 +230,13 @@ export function resolveSaicodeModel(modelInput: string | null | undefined): {
   const inferredProvider =
     process.env.SAICODE_PROVIDER ||
     process.env.SAICODE_DEFAULT_PROVIDER ||
-    (resolvedId.startsWith('cliproxyapi/')
+    (resolvedId.startsWith('cpa/')
+      ? 'cpa'
+      : resolvedId.startsWith('cliproxyapi/')
       ? 'cliproxyapi'
       : resolvedId.startsWith('nvidia/')
         ? 'nvidia'
-        : 'nvidia')
+        : 'cpa')
 
   if (resolvedId.includes('/')) {
     const [, ...rest] = resolvedId.split('/')

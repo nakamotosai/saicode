@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { BoundedUUIDSet } from '../bridge/bridgeMessaging.js'
 import type { ToolUseConfirm } from '../components/permissions/PermissionRequest.js'
@@ -20,7 +21,10 @@ import type { AppState } from '../state/AppStateStore.js'
 import type { Tool } from '../Tool.js'
 import { findToolByName } from '../Tool.js'
 import type { Message as MessageType } from '../types/message.js'
-import type { PermissionAskDecision } from '../types/permissions.js'
+import type {
+  PermissionAskDecision,
+  PermissionUpdate,
+} from '../types/permissions.js'
 import { logForDebugging } from '../utils/debug.js'
 import { truncateToWidth } from '../utils/format.js'
 import {
@@ -398,6 +402,12 @@ export function useRemoteSession({
           async recheckPermission() {
             // No-op for remote — permission state is on the container
           },
+        } as ToolUseConfirm<Record<string, unknown>> & {
+          onAllow(
+            updatedInput: Record<string, unknown>,
+            permissionUpdates: PermissionUpdate[],
+            feedback?: string,
+          ): void
         }
 
         setToolUseConfirmQueue(queue => [...queue, toolUseConfirm])

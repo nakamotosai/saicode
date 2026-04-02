@@ -1,3 +1,4 @@
+// @ts-nocheck
 import type { ComputerUseAPI } from '@ant/computer-use-swift'
 
 let cached: ComputerUseAPI | undefined

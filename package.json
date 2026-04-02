@@ -8,7 +8,9 @@
   },
   "scripts": {
     "saicode": "bun run ./bin/saicode",
-    "start": "bun run ./bin/saicode"
+    "start": "bun run ./bin/saicode",
+    "typecheck": "tsc --noEmit --pretty false",
+    "check": "bun run typecheck"
   },
   "devDependencies": {
     "bun-types": "^1.3.1",

@@ -6,27 +6,25 @@
 
 - 品牌统一为 `saicode`
 - 配置目录统一为 `~/.saicode`
-- 默认模型切到 `cliproxyapi/qwen/qwen3.5-122b-a10b`
-- 主 provider 支持 `nvidia` 与 `cliproxyapi`
+- 默认模型切到 `cpa/qwen/qwen3.5-397b-a17b`
+- 主 provider 统一为 `cpa`（`cliproxyapi` 的简写）
 - 保留 CLI / TUI / MCP / plugins / skills 的主体能力
 - 默认关闭旧的 `auth / setup-token / doctor / update / install` 命令面
 
 ## 当前内建模型
 
 ```text
-nvidia/qwen/qwen3.5-122b-a10b
-nvidia/qwen/qwen3.5-397b-a17b
-nvidia/nvidia/nemotron-3-super-120b-a12b
-nvidia/openai/gpt-oss-120b
-cliproxyapi/gpt-5.4
-cliproxyapi/gpt-5.4-mini
-cliproxyapi/qwen/qwen3.5-122b-a10b
-cliproxyapi/qwen/qwen3.5-397b-a17b
-cliproxyapi/nvidia/nemotron-3-super-120b-a12b
-cliproxyapi/openai/gpt-oss-120b
-cliproxyapi/opencode/qwen3.6-plus-free
-cliproxyapi/opencode/mimo-v2-pro-free
-cliproxyapi/opencode/mimo-v2-omni-free
+cpa/gpt-5.4
+cpa/gpt-5.4-mini
+cpa/qwen/qwen3.5-122b-a10b
+cpa/qwen/qwen3.5-397b-a17b
+cpa/qwen3-coder-plus
+cpa/vision-model
+cpa/nvidia/nemotron-3-super-120b-a12b
+cpa/openai/gpt-oss-120b
+cpa/opencode/qwen3.6-plus-free
+cpa/opencode/mimo-v2-pro-free
+cpa/opencode/mimo-v2-omni-free
 ```
 
 ## 快速开始
@@ -46,18 +44,16 @@ cp .env.example .env
 推荐最小配置：
 
 ```env
-SAICODE_PROVIDER=cliproxyapi
-SAICODE_MODEL=cliproxyapi/qwen/qwen3.5-122b-a10b
-SAICODE_DEFAULT_MODEL=cliproxyapi/qwen/qwen3.5-122b-a10b
-NVIDIA_API_KEY=your_nvidia_key_here
-NVIDIA_BASE_URL=https://integrate.api.nvidia.com/v1
+SAICODE_PROVIDER=cpa
+SAICODE_MODEL=cpa/qwen/qwen3.5-397b-a17b
+SAICODE_DEFAULT_MODEL=cpa/qwen/qwen3.5-397b-a17b
 CLIPROXYAPI_BASE_URL=http://127.0.0.1:8317/v1
 API_TIMEOUT_MS=600000
 DISABLE_TELEMETRY=1
 SAICODE_DISABLE_LEGACY_COMMANDS=1
 ```
 
-如果你主要走 `cliproxyapi`，把 `SAICODE_PROVIDER` 和 `SAICODE_MODEL` 改成对应模型即可。
+如果你主要走 `cliproxyapi`，在 `saicode` 里统一用 `cpa/...` 这套模型 ID 即可；旧的 `cliproxyapi/...` 与直连 `nvidia/...` 旧 ID 只作为兼容别名保留。
 
 ### 3. 启动
 
@@ -118,7 +114,6 @@ SAICODE_MODEL
 SAICODE_DEFAULT_MODEL
 SAICODE_SMALL_FAST_MODEL
 SAICODE_CONFIG_DIR
-NVIDIA_API_KEY / NVIDIA_BASE_URL
 CLIPROXYAPI_API_KEY / CLIPROXYAPI_BASE_URL
 SAICODE_WEB_SEARCH_BASE_URL
 SAICODE_SAI_SEARCH_BASE_URL
@@ -128,7 +123,7 @@ SAICODE_WEB_SEARCH_FETCH_TOP_K
 ## 当前实现边界
 
 - 主要调用链已经切到 `saicodeRuntime`
-- provider 统一走 OpenAI-compatible 适配层，已支持 `Responses` 与 `Chat Completions`
+- provider 统一走 OpenAI-compatible 适配层，当前默认只暴露 `cpa` 这一路
 - `cliproxyapi` 已挂入 OpenCode free 模型：`qwen3.6-plus-free`、`mimo-v2-pro-free`、`mimo-v2-omni-free`
 - 搜索已切到本地 `WebSearch` 实现，并支持 `sai-search` fallback 与结果页自动抓取
 - 旧的 Claude 专属命令默认隐藏，但仓库里仍有大量历史命名尚未全量清洗
