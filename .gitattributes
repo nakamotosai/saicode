@@ -1,0 +1,2 @@
+*.sh text eol=lf
+bin/saicode text eol=lf

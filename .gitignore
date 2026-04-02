@@ -1,0 +1,14 @@
+.env
+.env.*
+!.env.example
+node_modules
+projects/
+sessions/
+shell-snapshots/
+backups/
+file-history/
+history.jsonl
+settings.json
+tmp_*.jsonl
+tmp_*.txt
+tmp_*.json
