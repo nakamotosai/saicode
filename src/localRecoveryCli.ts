@@ -3,13 +3,12 @@ import { createInterface } from 'readline'
 import { getEmptyToolPermissionContext } from './Tool.js'
 import { saicodeQueryModelWithoutStreaming } from './services/api/saicodeRuntime.js'
 import type { Message } from './types/message.js'
+import { getSaicodeCliVersion } from './utils/cliVersion.js'
 import { createUserMessage, extractTextContent } from './utils/messages.js'
+import { getSaicodeDefaultModelId } from './utils/model/saicodeCatalog.js'
 import { asSystemPrompt } from './utils/systemPromptType.js'
 
 type OutputFormat = 'text' | 'json'
-
-const VERSION = '1.0.0'
-const DEFAULT_MODEL = 'cpa/qwen/qwen3.5-397b-a17b'
 
 function printHelp(): void {
   process.stdout.write(
@@ -34,6 +33,7 @@ function printHelp(): void {
       '  SAICODE_PROVIDER',
       '  SAICODE_CONFIG_DIR',
       '  SAICODE_PROVIDER=cpa',
+      '  CPA_API_KEY / CPA_BASE_URL',
       '  CLIPROXYAPI_API_KEY / CLIPROXYAPI_BASE_URL',
       '  API_TIMEOUT_MS',
       '',
@@ -42,7 +42,7 @@ function printHelp(): void {
 }
 
 function printVersion(): void {
-  process.stdout.write(`${VERSION} (saicode recovery)\n`)
+  process.stdout.write(`${getSaicodeCliVersion()} (saicode recovery)\n`)
 }
 
 function parseArgs(argv: string[]) {
@@ -129,7 +129,7 @@ function getResolvedModel(model: string | undefined): string {
     process.env.SAICODE_MODEL ||
     process.env.SAICODE_DEFAULT_MODEL ||
     process.env.SAICODE_DEFAULT_SONNET_MODEL ||
-    DEFAULT_MODEL
+    getSaicodeDefaultModelId()
   )
 }
 

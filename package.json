@@ -7,10 +7,25 @@
     "saicode": "./bin/saicode"
   },
   "scripts": {
-    "saicode": "bun run ./bin/saicode",
-    "start": "bun run ./bin/saicode",
-    "typecheck": "tsc --noEmit --pretty false",
-    "check": "bun run typecheck"
+    "saicode": "./bin/saicode",
+    "start": "./bin/saicode",
+    "smoke:help": "./bin/saicode --help >/dev/null",
+    "bench:recovery": "./scripts/bench_native_recovery.sh",
+    "bench:lightweight": "./scripts/bench_lightweight_headless.sh",
+    "bench:warm-headless": "./scripts/bench_warm_headless.sh",
+    "bench:native-local-tools": "./scripts/bench_native_local_tools.sh",
+    "bench:native-bash": "./scripts/bench_native_readonly_bash.sh",
+    "native:build": "cargo build --release --manifest-path native/saicode-launcher/Cargo.toml",
+    "native:test": "cargo test --manifest-path native/saicode-launcher/Cargo.toml",
+    "native:test:optional": "bash -lc 'if command -v cargo >/dev/null 2>&1; then cargo test --manifest-path native/saicode-launcher/Cargo.toml; else echo skip native:test: cargo not installed; fi'",
+    "closeout:preflight": "./scripts/closeout_preflight.sh",
+    "closeout:live": "SAICODE_CLOSEOUT_LIVE=1 ./scripts/closeout_preflight.sh",
+    "test": "bun test",
+    "typecheck:fast": "tsc --project tsconfig.fast.json --noEmit --pretty false",
+    "typecheck:full": "tsc --noEmit --pretty false",
+    "typecheck": "bun run typecheck:fast",
+    "check": "bun test && bun run typecheck:full && bun run native:test:optional && ./bin/saicode --help >/dev/null",
+    "verify": "bun test && bun run typecheck:full && bun run native:test:optional && ./bin/saicode --help >/dev/null"
   },
   "devDependencies": {
     "bun-types": "^1.3.1",

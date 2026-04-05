@@ -1,25 +1,34 @@
-#!/usr/bin/env bun
+#!/usr/bin/env bash
+set -euo pipefail
 
-import { spawn } from 'child_process'
-import { dirname, join } from 'path'
-import { fileURLToPath } from 'url'
+resolve_script_path() {
+  local source="$1"
 
-const rootDir = dirname(dirname(fileURLToPath(import.meta.url)))
-const entrypoint =
-  process.env.SAICODE_FORCE_RECOVERY_CLI === '1'
-    ? join(rootDir, 'src', 'localRecoveryCli.ts')
-    : join(rootDir, 'src', 'entrypoints', 'cli.tsx')
+  while [[ -h "$source" ]]; do
+    local dir target
+    dir="$(cd -P "$(dirname "$source")" && pwd)"
+    target="$(readlink "$source")"
 
-const child = spawn(
-  process.execPath,
-  ['--env-file=.env', entrypoint, ...process.argv.slice(2)],
-  {
-    cwd: rootDir,
-    env: process.env,
-    stdio: 'inherit',
-  },
-)
+    if [[ "$target" != /* ]]; then
+      source="$dir/$target"
+    else
+      source="$target"
+    fi
+  done
 
-child.on('exit', code => {
-  process.exit(code ?? 0)
-})
+  printf '%s\n' "$(cd -P "$(dirname "$source")" && pwd)/$(basename "$source")"
+}
+
+SCRIPT_PATH="$(resolve_script_path "${BASH_SOURCE[0]}")"
+SCRIPT_DIR="$(cd -P "$(dirname "$SCRIPT_PATH")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+NATIVE_LAUNCHER="$REPO_ROOT/native/saicode-launcher/target/release/saicode-launcher"
+PRELOAD_SCRIPT="$REPO_ROOT/preload.ts"
+
+if [[ "${SAICODE_DISABLE_NATIVE_LAUNCHER:-}" != "1" && -x "$NATIVE_LAUNCHER" ]]; then
+  export SAICODE_REPO_ROOT="$REPO_ROOT"
+  exec "$NATIVE_LAUNCHER" "$@"
+fi
+
+export SAICODE_REPO_ROOT="$REPO_ROOT"
+exec bun --preload "$PRELOAD_SCRIPT" "$REPO_ROOT/bin/saicode-bun" "$@"

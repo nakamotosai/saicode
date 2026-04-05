@@ -2,13 +2,13 @@
 
 `saicode` 是一个基于这份源码壳重构出来的自用型 coding agent CLI/TUI，默认不再走 Claude/Anthropic 登录链路，而是直接接你自己的 OpenAI-compatible provider。
 
-当前这版已经同步到 GitHub 的新基线，`tsc --noEmit --pretty false` 结果为 `0` 错误，可直接用 `bun run check` 做一致性复核。
+当前这版已经同步到 GitHub 的新基线，日常默认类型检查可用 `bun run typecheck`，需要深度全量扫描时跑 `bun run typecheck:full`，最小回归可直接跑 `bun run verify`。
 
 当前这一版的目标是：
 
 - 品牌统一为 `saicode`
 - 配置目录统一为 `~/.saicode`
-- 默认模型切到 `cpa/qwen/qwen3.5-397b-a17b`
+- 默认模型切到 `cpa/gpt-5.4`
 - 主 provider 统一为 `cpa`（`cliproxyapi` 的简写）
 - 保留 CLI / TUI / MCP / plugins / skills 的主体能力
 - 默认关闭旧的 `auth / setup-token / doctor / update / install` 命令面
@@ -24,6 +24,7 @@ cpa/qwen3-coder-plus
 cpa/vision-model
 cpa/nvidia/nemotron-3-super-120b-a12b
 cpa/openai/gpt-oss-120b
+cpa/google/gemma-4-31b-it
 cpa/opencode/qwen3.6-plus-free
 cpa/opencode/mimo-v2-pro-free
 cpa/opencode/mimo-v2-omni-free
@@ -40,13 +41,26 @@ bun install
 ### 1.1 运行类型检查
 
 ```bash
-bun run check
+bun run typecheck
+bun run typecheck:full
 ```
 
-这条命令等价于：
+日常最小回归：
 
 ```bash
-bun run typecheck
+bun run verify
+```
+
+收尾前推荐再跑一遍：
+
+```bash
+bun run closeout:preflight
+```
+
+如果当前机器已经配好 `~/.saicode/config.json`，并且要在推 GitHub 前确认真实可用，再跑：
+
+```bash
+bun run closeout:live
 ```
 
 ### 2. 配置环境变量
@@ -59,15 +73,19 @@ cp .env.example .env
 
 ```env
 SAICODE_PROVIDER=cpa
-SAICODE_MODEL=cpa/qwen/qwen3.5-397b-a17b
-SAICODE_DEFAULT_MODEL=cpa/qwen/qwen3.5-397b-a17b
+SAICODE_MODEL=cpa/gpt-5.4
+SAICODE_DEFAULT_MODEL=cpa/gpt-5.4
+CPA_API_KEY=你的统一入口密钥
+CPA_BASE_URL=http://127.0.0.1:8317/v1
 CLIPROXYAPI_BASE_URL=http://127.0.0.1:8317/v1
 API_TIMEOUT_MS=600000
 DISABLE_TELEMETRY=1
 SAICODE_DISABLE_LEGACY_COMMANDS=1
 ```
 
-如果你主要走 `cliproxyapi`，在 `saicode` 里统一用 `cpa/...` 这套模型 ID 即可；旧的 `cliproxyapi/...` 与直连 `nvidia/...` 旧 ID 只作为兼容别名保留。
+如果你主要走 `cliproxyapi`，在 `saicode` 里统一用 `cpa/...` 这套模型 ID 即可；`CPA_API_KEY` / `CPA_BASE_URL` 是推荐口径，`CLIPROXYAPI_API_KEY` / `CLIPROXYAPI_BASE_URL` 与 `OPENAI_API_KEY` 仍保留兼容。
+
+当前默认值优先走 `gpt-5.4` / `gpt-5.4-mini` 这条已验证稳定的线路；Qwen 3.5 仍保留在内建模型目录里，但不再作为默认值。
 
 ### 3. 启动
 
@@ -103,6 +121,7 @@ The script will:
 - clone or update the repo under `~/saicode`
 - run `bun install --frozen-lockfile`
 - create `.env` from `.env.example` if needed
+- if `~/.saicode/config.json` is missing and the current machine already has a working OpenClaw `cliproxyapi` provider, bootstrap `saicode` runtime config from it
 - create `~/.local/bin/saicode` as a direct command entry
 - ensure `~/.local/bin` is on PATH through `~/.bashrc`
 
@@ -111,6 +130,13 @@ After the script finishes, review `~/saicode/.env`, then run:
 ```bash
 source ~/.bashrc
 saicode --help
+bun run closeout:preflight
+```
+
+完整收尾与 GitHub 提交流程见：
+
+```text
+docs/closeout-workflow.md
 ```
 
 ## 目录与配置
@@ -128,6 +154,7 @@ SAICODE_MODEL
 SAICODE_DEFAULT_MODEL
 SAICODE_SMALL_FAST_MODEL
 SAICODE_CONFIG_DIR
+CPA_API_KEY / CPA_BASE_URL
 CLIPROXYAPI_API_KEY / CLIPROXYAPI_BASE_URL
 SAICODE_WEB_SEARCH_BASE_URL
 SAICODE_SAI_SEARCH_BASE_URL
@@ -141,7 +168,9 @@ SAICODE_WEB_SEARCH_FETCH_TOP_K
 - `cliproxyapi` 已挂入 OpenCode free 模型：`qwen3.6-plus-free`、`mimo-v2-pro-free`、`mimo-v2-omni-free`
 - 搜索已切到本地 `WebSearch` 实现，并支持 `sai-search` fallback 与结果页自动抓取
 - 旧的 Claude 专属命令默认隐藏，但仓库里仍有大量历史命名尚未全量清洗
-- 这份源码壳当前的 TypeScript 检查已经清零；日常验收可先跑 `bun run check`，再看真实 CLI/TUI 运行与目标功能实测
+- 深度类型扫描仍可跑 `bun run typecheck:full`
+- 默认 `bun run typecheck` 已切到高频快车道；完整总闸门保留在 `bun run typecheck:full`
+- 当前仓库已补最小回归门：`bun run test`、`bun run check` 与 `bun run verify`
 - 这是自用重构起点，不是干净从零设计的新仓库
 
 ## 项目结构

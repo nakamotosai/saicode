@@ -38,6 +38,14 @@ type RuntimeConfigFile = {
   >
 }
 
+function getMissingApiKeyMessage(providerId: string): string {
+  if (providerId === 'cpa' || providerId === 'cliproxyapi') {
+    return `${providerId} API key is missing. Set CPA_API_KEY or CLIPROXYAPI_API_KEY (OPENAI_API_KEY also works), or configure ~/.saicode/config.json providers.cpa/cliproxyapi.apiKey`
+  }
+
+  return `${providerId} API key is missing. Set ${providerId.toUpperCase()}_API_KEY or configure ~/.saicode/config.json providers.${providerId}.apiKey`
+}
+
 function getRuntimeConfigFile(): RuntimeConfigFile {
   const path = join(getClaudeConfigHomeDir(), 'config.json')
   if (!existsSync(path)) {
@@ -242,14 +250,17 @@ function getProviderConfig(model: string | undefined): ProviderConfig {
       return {
         id: entry.provider === 'cpa' ? 'cpa' : 'cliproxyapi',
         api:
+          (process.env.CPA_API as WireAPI | undefined) ||
           (process.env.CLIPROXYAPI_API as WireAPI | undefined) ||
           fileProvider?.api ||
           'openai-responses',
         baseUrl:
+          process.env.CPA_BASE_URL ||
           process.env.CLIPROXYAPI_BASE_URL ||
           fileProvider?.baseUrl ||
           'http://127.0.0.1:8317/v1',
         apiKey:
+          process.env.CPA_API_KEY ||
           process.env.CLIPROXYAPI_API_KEY ||
           fileProvider?.apiKey ||
           process.env.OPENAI_API_KEY,
@@ -923,9 +934,7 @@ async function* performStreamingRequest(args: {
   })
 
   if (!provider.apiKey && provider.id !== 'cliproxyapi') {
-    throw new Error(
-      `${provider.id} API key is missing. Set ${provider.id.toUpperCase()}_API_KEY or ~/.saicode/config.json`,
-    )
+    throw new Error(getMissingApiKeyMessage(provider.id))
   }
 
   if (args.options.outputFormat) {
@@ -1272,9 +1281,7 @@ async function performRequest(args: {
   })
 
   if (!provider.apiKey && provider.id !== 'cliproxyapi') {
-    throw new Error(
-      `${provider.id} API key is missing. Set ${provider.id.toUpperCase()}_API_KEY or ~/.saicode/config.json`,
-    )
+    throw new Error(getMissingApiKeyMessage(provider.id))
   }
 
   if (provider.api === 'openai-chat-completions') {
@@ -1421,6 +1428,12 @@ export async function saicodeQueryWithModel(args: {
 
 export function saicodeVerifyApiKey(apiKey: string | undefined): boolean {
   return Boolean(apiKey && apiKey.trim())
+}
+
+export function saicodeGetProviderConfigForTesting(
+  model: string | undefined,
+): ProviderConfig {
+  return getProviderConfig(model)
 }
 
 export function saicodeGetAPIMetadata(): Record<string, never> {

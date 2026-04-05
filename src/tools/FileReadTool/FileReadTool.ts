@@ -417,9 +417,11 @@ export const FileReadTool = buildTool({
   },
   renderToolUseErrorMessage,
   async validateInput({ file_path, pages }, toolUseContext: ToolUseContext) {
+    const normalizedPages = pages?.trim()
+
     // Validate pages parameter (pure string parsing, no I/O)
-    if (pages !== undefined) {
-      const parsed = parsePDFPageRange(pages)
+    if (normalizedPages) {
+      const parsed = parsePDFPageRange(normalizedPages)
       if (!parsed) {
         return {
           result: false,

@@ -5,6 +5,8 @@
     "moduleResolution": "bundler",
     "skipLibCheck": true,
     "allowJs": true,
+    "incremental": true,
+    "tsBuildInfoFile": "./tsconfig.full.tsbuildinfo",
     "jsx": "react-jsx",
     "paths": {
       "@ant/claude-for-chrome-mcp": [
@@ -20,5 +22,15 @@
     "types": [
       "bun-types"
     ]
-  }
+  },
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "tests/**/*.ts",
+    "preload.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist"
+  ]
 }

@@ -3,11 +3,6 @@
 import { feature } from 'bun:bundle'
 import { readFile, stat } from 'fs/promises'
 import { dirname } from 'path'
-import {
-  downloadUserSettings,
-  redownloadUserSettings,
-} from 'src/services/settingsSync/index.js'
-import { waitForRemoteManagedSettingsToLoad } from 'src/services/remoteManagedSettings/index.js'
 import { StructuredIO } from 'src/cli/structuredIO.js'
 import { RemoteIO } from 'src/cli/remoteIO.js'
 import {
@@ -27,8 +22,8 @@ import {
   logEvent,
   type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
 } from 'src/services/analytics/index.js'
-import { getFeatureValue_CACHED_MAY_BE_STALE } from 'src/services/analytics/growthbook.js'
 import { logForDebugging } from 'src/utils/debug.js'
+import { isLightweightHeadlessMode } from 'src/utils/envUtils.js'
 import {
   logForDiagnosticsNoPII,
   withDiagnosticsTiming,
@@ -251,10 +246,6 @@ import {
 import { setupVscodeSdkMcp } from 'src/services/mcp/vscodeSdkMcp.js'
 import { getAllMcpConfigs } from 'src/services/mcp/config.js'
 import {
-  isQualifiedForGrove,
-  checkGroveForNonInteractive,
-} from 'src/services/api/grove.js'
-import {
   toInternalMessages,
   toSDKRateLimitInfo,
 } from 'src/utils/messages/mappers.js'
@@ -349,7 +340,6 @@ import { getRunningTasks } from '../utils/task/framework.js'
 import { isBackgroundTask } from '../tasks/types.js'
 import { stopTask } from '../tasks/stopTask.js'
 import { drainSdkEvents } from '../utils/sdkEventQueue.js'
-import { initializeGrowthBook } from '../services/analytics/growthbook.js'
 import { errorMessage, toError } from '../utils/errors.js'
 import { sleep } from '../utils/sleep.js'
 import { isExtractModeActive } from '../memdir/paths.js'
@@ -376,6 +366,59 @@ const extractMemoriesModule = feature('EXTRACT_MEMORIES')
   ? (require('../services/extractMemories/extractMemories.js') as typeof import('../services/extractMemories/extractMemories.js'))
   : null
 /* eslint-enable @typescript-eslint/no-require-imports */
+
+async function downloadUserSettingsLazy(): Promise<void> {
+  const { downloadUserSettings } = await import(
+    '../services/settingsSync/index.js'
+  )
+  await downloadUserSettings()
+}
+
+async function redownloadUserSettingsLazy(): Promise<boolean> {
+  const { redownloadUserSettings } = await import(
+    '../services/settingsSync/index.js'
+  )
+  return redownloadUserSettings()
+}
+
+async function waitForRemoteManagedSettingsToLoadLazy(): Promise<void> {
+  const { waitForRemoteManagedSettingsToLoad } = await import(
+    '../services/remoteManagedSettings/index.js'
+  )
+  await waitForRemoteManagedSettingsToLoad()
+}
+
+async function shouldEnableAgentProgressSummaries(): Promise<boolean> {
+  const { getFeatureValue_CACHED_MAY_BE_STALE } = await import(
+    '../services/analytics/growthbook.js'
+  )
+  return getFeatureValue_CACHED_MAY_BE_STALE('tengu_slate_prism', true)
+}
+
+async function maybeRunGroveCheck(): Promise<void> {
+  if (isLightweightHeadlessMode()) {
+    return
+  }
+
+  const { isQualifiedForGrove, checkGroveForNonInteractive } = await import(
+    '../services/api/grove.js'
+  )
+  if (await isQualifiedForGrove()) {
+    await checkGroveForNonInteractive()
+  }
+}
+
+function maybeInitializeHeadlessGrowthBook(): void {
+  if (isLightweightHeadlessMode()) {
+    return
+  }
+
+  void import('../services/analytics/growthbook.js')
+    .then(({ initializeGrowthBook }) => {
+      initializeGrowthBook()
+    })
+    .catch(logError)
+}
 
 const SHUTDOWN_TEAM_PROMPT = `<system-reminder>
 You are running in non-interactive mode and cannot return a response to the user until your team is shut down.
@@ -492,6 +535,8 @@ export async function runHeadless(
     setSDKStatus?: (status: SDKStatus) => void
   },
 ): Promise<void> {
+  const lightweightHeadless = isLightweightHeadlessMode()
+
   if (
     process.env.USER_TYPE === 'ant' &&
     isEnvTruthy(process.env.CLAUDE_CODE_EXIT_AFTER_FIRST_RENDER)
@@ -512,25 +557,27 @@ export async function runHeadless(
     feature('DOWNLOAD_USER_SETTINGS') &&
     (isEnvTruthy(process.env.CLAUDE_CODE_REMOTE) || getIsRemoteMode())
   ) {
-    void downloadUserSettings()
+    void downloadUserSettingsLazy()
   }
 
   // In headless mode there is no React tree, so the useSettingsChange hook
   // never runs. Subscribe directly so that settings changes (including
   // managed-settings / policy updates) are fully applied.
-  settingsChangeDetector.subscribe(source => {
-    applySettingsChange(source, setAppState)
+  if (!lightweightHeadless) {
+    settingsChangeDetector.subscribe(source => {
+      applySettingsChange(source, setAppState)
 
-    // In headless mode, also sync the denormalized fastMode field from
-    // settings. The TUI manages fastMode via the UI so it skips this.
-    if (isFastModeEnabled()) {
-      setAppState(prev => {
-        const s = prev.settings as Record<string, unknown>
-        const fastMode = s.fastMode === true && !s.fastModePerSessionOptIn
-        return { ...prev, fastMode }
-      })
-    }
-  })
+      // In headless mode, also sync the denormalized fastMode field from
+      // settings. The TUI manages fastMode via the UI so it skips this.
+      if (isFastModeEnabled()) {
+        setAppState(prev => {
+          const s = prev.settings as Record<string, unknown>
+          const fastMode = s.fastMode === true && !s.fastModePerSessionOptIn
+          return { ...prev, fastMode }
+        })
+      }
+    })
+  }
 
   // Proactive activation is now handled in main.tsx before getTools() so
   // SleepTool passes isEnabled() filtering. This fallback covers the case
@@ -556,14 +603,12 @@ export async function runHeadless(
   headlessProfilerCheckpoint('runHeadless_entry')
 
   // Check Grove requirements for non-interactive consumer subscribers
-  if (await isQualifiedForGrove()) {
-    await checkGroveForNonInteractive()
-  }
+  await maybeRunGroveCheck()
   headlessProfilerCheckpoint('after_grove_check')
 
   // Initialize GrowthBook so feature flags take effect in headless mode.
   // Without this, the disk cache is empty and all flags fall back to defaults.
-  void initializeGrowthBook()
+  maybeInitializeHeadlessGrowthBook()
 
   if (options.resumeSessionAt && !options.resume) {
     process.stderr.write(`Error: --resume-session-at requires --resume\n`)
@@ -1731,12 +1776,13 @@ function runHeadlessStreaming(
       await Promise.all([
         feature('DOWNLOAD_USER_SETTINGS') &&
         (isEnvTruthy(process.env.CLAUDE_CODE_REMOTE) || getIsRemoteMode())
-          ? withDiagnosticsTiming('headless_user_settings_download', () =>
-              downloadUserSettings(),
+          ? withDiagnosticsTiming(
+              'headless_user_settings_download',
+              downloadUserSettingsLazy,
             )
           : Promise.resolve(),
         withDiagnosticsTiming('headless_managed_settings_wait', () =>
-          waitForRemoteManagedSettingsToLoad(),
+          waitForRemoteManagedSettingsToLoadLazy(),
         ),
       ])
 
@@ -1757,7 +1803,7 @@ function runHeadlessStreaming(
   let pluginInstallPromise: Promise<void> | null = null
   // --bare / SIMPLE: skip plugin install. Scripted calls don't add plugins
   // mid-session; the next interactive run reconciles.
-  if (!isBareMode()) {
+  if (!isBareMode() && !isLightweightHeadlessMode()) {
     if (isEnvTruthy(process.env.CLAUDE_CODE_SYNC_PLUGIN_INSTALL)) {
       pluginInstallPromise = installPluginsAndApplyMcpInBackground()
     } else {
@@ -2925,7 +2971,7 @@ function runHeadlessStreaming(
 
           if (
             message.request.agentProgressSummaries &&
-            getFeatureValue_CACHED_MAY_BE_STALE('tengu_slate_prism', true)
+            (await shouldEnableAgentProgressSummaries())
           ) {
             setSdkAgentProgressSummariesEnabled(true)
           }
@@ -3092,7 +3138,7 @@ function runHeadlessStreaming(
             ) {
               // Re-pull user settings so enabledPlugins pushed from the
               // user's local CLI take effect before the cache sweep.
-              const applied = await redownloadUserSettings()
+              const applied = await redownloadUserSettingsLazy()
               if (applied) {
                 settingsChangeDetector.notifyChange('userSettings')
               }

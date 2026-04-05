@@ -1,3 +1,8 @@
+import { existsSync, readFileSync, statSync } from 'fs'
+import memoize from 'lodash-es/memoize.js'
+import { join } from 'path'
+import { getClaudeConfigHomeDir } from '../envUtils.js'
+
 export type SaicodeModelEntry = {
   id: string
   provider: string
@@ -8,8 +13,8 @@ export type SaicodeModelEntry = {
   aliases: readonly string[]
 }
 
-const DEFAULT_MODEL_ID = 'cpa/qwen/qwen3.5-397b-a17b'
-const DEFAULT_BEST_MODEL_ID = 'cpa/qwen/qwen3.5-397b-a17b'
+const DEFAULT_MODEL_ID = 'cpa/gpt-5.4'
+const DEFAULT_BEST_MODEL_ID = 'cpa/gpt-5.4'
 const DEFAULT_SMALL_FAST_MODEL_ID = 'cpa/gpt-5.4-mini'
 
 const SAICODE_MODELS: readonly SaicodeModelEntry[] = [
@@ -102,6 +107,21 @@ const SAICODE_MODELS: readonly SaicodeModelEntry[] = [
     ],
   },
   {
+    id: 'cpa/google/gemma-4-31b-it',
+    provider: 'cpa',
+    model: 'google/gemma-4-31b-it',
+    label: 'Gemma 4 31B IT',
+    description: '经 cliproxyapi 转发的 Gemma 4 31B Instruct',
+    maxOutputTokens: 32768,
+    aliases: [
+      'gemma4',
+      'gemma-4',
+      'gemma-31b',
+      'cliproxyapi/google/gemma-4-31b-it',
+      'nvidia/google/gemma-4-31b-it',
+    ],
+  },
+  {
     id: 'cpa/gpt-5.4',
     provider: 'cpa',
     model: 'gpt-5.4',
@@ -169,12 +189,59 @@ for (const entry of SAICODE_MODELS) {
   }
 }
 
+type RuntimeConfigFile = {
+  providers?: Record<
+    string,
+    {
+      api?: string
+      baseUrl?: string
+      apiKey?: string
+    }
+  >
+}
+
+const readRuntimeConfigFile = memoize(
+  (configPath: string, cacheKey: string): RuntimeConfigFile => {
+    if (cacheKey === 'missing') {
+      return {}
+    }
+
+    try {
+      return JSON.parse(readFileSync(configPath, 'utf8')) as RuntimeConfigFile
+    } catch {
+      return {}
+    }
+  },
+  (configPath: string, cacheKey: string) => `${configPath}:${cacheKey}`,
+)
+
+export function hasSaicodeRuntimeConfig(): boolean {
+  const configPath = join(getClaudeConfigHomeDir(), 'config.json')
+  const cacheKey = existsSync(configPath)
+    ? (() => {
+        const stat = statSync(configPath)
+        return `${stat.size}:${stat.mtimeMs}`
+      })()
+    : 'missing'
+  const config = readRuntimeConfigFile(configPath, cacheKey)
+  return Boolean(
+    config.providers &&
+      Object.values(config.providers).some(
+        provider =>
+          provider &&
+          typeof provider === 'object' &&
+          Boolean(provider.api || provider.baseUrl || provider.apiKey),
+      ),
+  )
+}
+
 export function isSaicodeModeEnabled(): boolean {
   return Boolean(
     process.env.SAICODE_PROVIDER ||
       process.env.SAICODE_MODEL ||
       process.env.SAICODE_DEFAULT_MODEL ||
-      process.env.SAICODE_CONFIG_DIR,
+      process.env.SAICODE_CONFIG_DIR ||
+      hasSaicodeRuntimeConfig(),
   )
 }
 

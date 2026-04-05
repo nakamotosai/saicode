@@ -1,5 +1,6 @@
 import type { AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS } from '../../services/analytics/index.js'
 import { isEnvTruthy } from '../envUtils.js'
+import { hasSaicodeRuntimeConfig } from './saicodeCatalog.js'
 
 export type APIProvider = 'firstParty' | 'bedrock' | 'vertex' | 'foundry'
 
@@ -7,7 +8,8 @@ export function getAPIProvider(): APIProvider {
   if (
     process.env.SAICODE_PROVIDER ||
     process.env.SAICODE_MODEL ||
-    process.env.SAICODE_DEFAULT_MODEL
+    process.env.SAICODE_DEFAULT_MODEL ||
+    hasSaicodeRuntimeConfig()
   ) {
     return 'foundry'
   }
@@ -33,7 +35,8 @@ export function isFirstPartyAnthropicBaseUrl(): boolean {
   if (
     process.env.SAICODE_PROVIDER ||
     process.env.SAICODE_MODEL ||
-    process.env.SAICODE_DEFAULT_MODEL
+    process.env.SAICODE_DEFAULT_MODEL ||
+    hasSaicodeRuntimeConfig()
   ) {
     return false
   }

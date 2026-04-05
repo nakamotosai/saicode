@@ -68,6 +68,10 @@ export function isBareMode(): boolean {
   )
 }
 
+export function isLightweightHeadlessMode(): boolean {
+  return isEnvTruthy(process.env.SAICODE_LIGHTWEIGHT_HEADLESS)
+}
+
 /**
  * Parses an array of environment variable strings into a key-value object
  * @param envVars Array of strings in KEY=VALUE format

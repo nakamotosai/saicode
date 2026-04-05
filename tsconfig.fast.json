@@ -1,0 +1,19 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "incremental": true,
+    "tsBuildInfoFile": "./tsconfig.fast.tsbuildinfo"
+  },
+  "include": [
+    "src/globals.d.ts",
+    "src/entrypoints/fastCliHelp.ts",
+    "src/entrypoints/router.ts",
+    "src/utils/cliVersion.ts",
+    "src/utils/nonInteractiveMode.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "tests/**/*.ts"
+  ]
+}

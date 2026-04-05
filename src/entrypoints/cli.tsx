@@ -249,7 +249,10 @@ async function main(): Promise<void> {
 
   // --bare: set SIMPLE early so gates fire during module eval / commander
   // option building (not just inside the action handler).
-  if (args.includes('--bare')) {
+  const {
+    shouldPreEnableSimpleMode
+  } = await import('../utils/nonInteractiveMode.js');
+  if (args.includes('--bare') || shouldPreEnableSimpleMode(args)) {
     process.env.CLAUDE_CODE_SIMPLE = '1';
   }
 

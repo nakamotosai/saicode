@@ -204,6 +204,7 @@ import { fetchSession, prepareApiRequest } from './utils/teleport/api.js';
 import { checkOutTeleportedSessionBranch, processMessagesForTeleportResume, teleportToRemoteWithErrorHandling, validateGitState, validateSessionRepository } from './utils/teleport.js';
 import { shouldEnableThinkingByDefault, type ThinkingConfig } from './utils/thinking.js';
 import { initUser, resetUserCache } from './utils/user.js';
+import { shouldAutoEnableBarePrint } from './utils/nonInteractiveMode.js';
 import { getTmuxInstallInstructions, isTmuxAvailable, parsePRReference } from './utils/worktree.js';
 
 // eslint-disable-next-line custom-rules/no-top-level-side-effects
@@ -979,7 +980,28 @@ async function run(): Promise<CommanderCommand> {
     // dir-walk). Must be set before setup() / any of the gated work runs.
     if ((options as {
       bare?: boolean;
-    }).bare) {
+    }).bare || shouldAutoEnableBarePrint(options as {
+      print?: boolean;
+      bare?: boolean;
+      continue?: boolean;
+      resume?: unknown;
+      sdkUrl?: string;
+      inputFormat?: string;
+      systemPrompt?: string;
+      systemPromptFile?: string;
+      appendSystemPrompt?: string;
+      appendSystemPromptFile?: string;
+      addDir?: string[];
+      mcpConfig?: string[];
+      pluginDir?: string[];
+      allowedTools?: string[];
+      tools?: string[];
+      agents?: string;
+      agent?: string;
+      init?: boolean;
+      initOnly?: boolean;
+      maintenance?: boolean;
+    })) {
       process.env.CLAUDE_CODE_SIMPLE = '1';
     }
 

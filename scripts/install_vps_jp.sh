@@ -4,6 +4,8 @@ set -euo pipefail
 REPO_URL="${1:-https://github.com/nakamotosai/saicode.git}"
 INSTALL_DIR="${INSTALL_DIR:-$HOME/saicode}"
 LINK_PATH="${LINK_PATH:-$HOME/.local/bin/saicode}"
+RUNTIME_CONFIG_PATH="${RUNTIME_CONFIG_PATH:-$HOME/.saicode/config.json}"
+OPENCLAW_CONFIG_PATH="${OPENCLAW_CONFIG_PATH:-$HOME/.openclaw/openclaw.json}"
 
 log() {
   printf '[saicode-install] %s\n' "$*"
@@ -54,6 +56,19 @@ install_deps() {
   (cd "$INSTALL_DIR" && bun install --frozen-lockfile)
 }
 
+build_native_launcher() {
+  if ! command -v cargo >/dev/null 2>&1; then
+    log "skip native launcher build: cargo not installed"
+    return
+  fi
+
+  log "building native launcher"
+  (
+    cd "$INSTALL_DIR"
+    cargo build --release --manifest-path native/saicode-launcher/Cargo.toml
+  )
+}
+
 ensure_env_file() {
   if [[ -f "$INSTALL_DIR/.env" ]]; then
     log ".env already exists"
@@ -69,10 +84,61 @@ ensure_env_file() {
   fi
 }
 
+bootstrap_runtime_config() {
+  if [[ -f "$RUNTIME_CONFIG_PATH" ]]; then
+    log "runtime config already exists"
+    return
+  fi
+
+  if [[ ! -f "$OPENCLAW_CONFIG_PATH" ]]; then
+    log "skip runtime config bootstrap: openclaw config not found"
+    return
+  fi
+
+  if ! command -v jq >/dev/null 2>&1; then
+    log "skip runtime config bootstrap: jq not installed"
+    return
+  fi
+
+  if ! jq -e '.models.providers.cliproxyapi.apiKey // "" | length > 0' "$OPENCLAW_CONFIG_PATH" >/dev/null 2>&1; then
+    log "skip runtime config bootstrap: cliproxyapi apiKey missing in openclaw config"
+    return
+  fi
+
+  mkdir -p "$(dirname "$RUNTIME_CONFIG_PATH")"
+  umask 077
+  jq '{
+    providers: {
+      cpa: {
+        api: (.models.providers.cliproxyapi.api // "openai-responses"),
+        baseUrl: .models.providers.cliproxyapi.baseUrl,
+        apiKey: .models.providers.cliproxyapi.apiKey,
+        headers: (.models.providers.cliproxyapi.headers // null)
+      },
+      cliproxyapi: {
+        api: (.models.providers.cliproxyapi.api // "openai-responses"),
+        baseUrl: .models.providers.cliproxyapi.baseUrl,
+        apiKey: .models.providers.cliproxyapi.apiKey,
+        headers: (.models.providers.cliproxyapi.headers // null)
+      }
+    }
+  }' "$OPENCLAW_CONFIG_PATH" > "$RUNTIME_CONFIG_PATH"
+  log "bootstrapped runtime config from current openclaw cliproxyapi provider"
+}
+
 create_link() {
   mkdir -p "$(dirname "$LINK_PATH")"
   ln -sfn "$INSTALL_DIR/bin/saicode" "$LINK_PATH"
   log "linked $LINK_PATH -> $INSTALL_DIR/bin/saicode"
+}
+
+smoke_link() {
+  log "smoke testing command entry"
+  "$LINK_PATH" --help >/dev/null
+  (
+    cd "$HOME"
+    SAICODE_DISABLE_NATIVE_LAUNCHER=1 "$LINK_PATH" mcp --help >/dev/null
+  )
 }
 
 ensure_path() {
@@ -99,6 +165,7 @@ Command: $LINK_PATH
 
 Before first real use, review:
   $INSTALL_DIR/.env
+  $RUNTIME_CONFIG_PATH
 
 Then reload the shell:
   source ~/.bashrc
@@ -109,8 +176,11 @@ main() {
   install_bun
   sync_repo
   install_deps
+  build_native_launcher
   ensure_env_file
+  bootstrap_runtime_config
   create_link
+  smoke_link
   ensure_path
   print_next_steps
 }

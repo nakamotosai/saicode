@@ -20,7 +20,6 @@ import type { NonNullableUsage } from 'src/services/api/logging.js'
 import { EMPTY_USAGE } from 'src/services/api/logging.js'
 import stripAnsi from 'strip-ansi'
 import type { Command } from './commands.js'
-import { getSlashCommandToolSkills } from './commands.js'
 import {
   LOCAL_COMMAND_STDERR_TAG,
   LOCAL_COMMAND_STDOUT_TAG,
@@ -46,7 +45,11 @@ import { createAbortController } from './utils/abortController.js'
 import type { AttributionState } from './utils/commitAttribution.js'
 import { getGlobalConfig } from './utils/config.js'
 import { getCwd } from './utils/cwd.js'
-import { isBareMode, isEnvTruthy } from './utils/envUtils.js'
+import {
+  isBareMode,
+  isEnvTruthy,
+  isLightweightHeadlessMode,
+} from './utils/envUtils.js'
 import { getFastModeState } from './utils/fastMode.js'
 import {
   type FileHistoryState,
@@ -65,7 +68,6 @@ import {
   getMainLoopModel,
   parseUserSpecifiedModel,
 } from './utils/model/model.js'
-import { loadAllPluginsCacheOnly } from './utils/plugins/pluginLoader.js'
 import {
   type ProcessUserInputContext,
   processUserInput,
@@ -532,10 +534,17 @@ export class QueryEngine {
     // ref-tracked plugins. CCR populates the cache via CLAUDE_CODE_SYNC_PLUGIN_INSTALL
     // (headlessPluginInstall) or CLAUDE_CODE_PLUGIN_SEED_DIR before this runs;
     // SDK callers that need fresh source can call /reload-plugins.
-    const [skills, { enabled: enabledPlugins }] = await Promise.all([
-      getSlashCommandToolSkills(getCwd()),
-      loadAllPluginsCacheOnly(),
-    ])
+    const [skills, { enabled: enabledPlugins }] =
+      isBareMode() || isLightweightHeadlessMode()
+        ? [[], { enabled: [] }]
+        : await Promise.all([
+            import('./commands.js').then(({ getSlashCommandToolSkills }) =>
+              getSlashCommandToolSkills(getCwd()),
+            ),
+            import('./utils/plugins/pluginLoader.js').then(
+              ({ loadAllPluginsCacheOnly }) => loadAllPluginsCacheOnly(),
+            ),
+          ])
     headlessProfilerCheckpoint('after_skills_plugins')
 
     yield buildSystemInitMessage({

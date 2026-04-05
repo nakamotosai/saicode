@@ -30,7 +30,11 @@ import { getCurrentProjectConfig, getGlobalConfig } from './utils/config.js'
 import { logForDiagnosticsNoPII } from './utils/diagLogs.js'
 import { env } from './utils/env.js'
 import { envDynamic } from './utils/envDynamic.js'
-import { isBareMode, isEnvTruthy } from './utils/envUtils.js'
+import {
+  isBareMode,
+  isEnvTruthy,
+  isLightweightHeadlessMode,
+} from './utils/envUtils.js'
 import { errorMessage } from './utils/errors.js'
 import { findCanonicalGitRoot, findGitRoot, getIsGit } from './utils/git.js'
 import { initializeFileChangedWatcher } from './utils/hooks/fileChangedWatcher.js'
@@ -66,6 +70,8 @@ export async function setup(
   messagingSocketPath?: string,
 ): Promise<void> {
   logForDiagnosticsNoPII('info', 'setup_started')
+  const skipHeadlessRuntimeExtras =
+    isBareMode() || isLightweightHeadlessMode()
 
   // Check for Node.js version < 18
   const nodeVersion = process.version.match(/^v(\d+)\./)?.[1]
@@ -87,7 +93,7 @@ export async function setup(
   // --bare / SIMPLE: skip UDS messaging server and teammate snapshot.
   // Scripted calls don't receive injected messages and don't use swarm teammates.
   // Explicit --messaging-socket-path is the escape hatch (per #23222 gate pattern).
-  if (!isBareMode() || messagingSocketPath !== undefined) {
+  if (!skipHeadlessRuntimeExtras || messagingSocketPath !== undefined) {
     // Start UDS messaging server (Mac/Linux only).
     // Enabled by default for ants — creates a socket in tmpdir if no
     // --messaging-socket-path is passed. Awaited so the server is bound
@@ -103,7 +109,7 @@ export async function setup(
   }
 
   // Teammate snapshot — SIMPLE-only gate (no escape hatch, swarm not used in bare)
-  if (!isBareMode() && isAgentSwarmsEnabled()) {
+  if (!skipHeadlessRuntimeExtras && isAgentSwarmsEnabled()) {
     const { captureTeammateModeSnapshot } = await import(
       './utils/swarm/backends/teammateModeSnapshot.js'
     )
@@ -301,7 +307,7 @@ export async function setup(
   // getCommands() kick — see comment there. Moved out of setup() because
   // the await points above (startUdsMessaging, ~20ms) meant getCommands()
   // raced ahead and memoized an empty bundledSkills list.
-  if (!isBareMode()) {
+  if (!skipHeadlessRuntimeExtras) {
     initSessionMemory() // Synchronous - registers hook, gate check happens lazily
     if (feature('CONTEXT_COLLAPSE')) {
       /* eslint-disable @typescript-eslint/no-require-imports */
@@ -328,7 +334,7 @@ export async function setup(
       isEnvTruthy(process.env.CLAUDE_CODE_SYNC_PLUGIN_INSTALL)) ||
     // --bare: loadPluginHooks → loadAllPlugins is filesystem work that's
     // wasted when executeHooks early-returns under --bare anyway.
-    isBareMode()
+    skipHeadlessRuntimeExtras
   if (!skipPluginPrefetch) {
     void getCommands(getProjectRoot())
   }
@@ -344,7 +350,7 @@ export async function setup(
   // commit code, and the 49ms attribution hook stat check (measured) is pure
   // overhead. NOT an early-return: the --dangerously-skip-permissions safety
   // gate, tengu_started beacon, and apiKeyHelper prefetch below must still run.
-  if (!isBareMode()) {
+  if (!skipHeadlessRuntimeExtras) {
     if (process.env.USER_TYPE === 'ant') {
       // Prime repo classification cache for auto-undercover mode. Default is
       // undercover ON until proven internal; if this resolves to internal, clear
@@ -394,7 +400,7 @@ export async function setup(
   // Pre-fetch data for Logo v2 - await to ensure it's ready before logo renders.
   // --bare / SIMPLE: skip — release notes are interactive-UI display data,
   // and getRecentActivity() reads up to 10 session JSONL files.
-  if (!isBareMode()) {
+  if (!skipHeadlessRuntimeExtras) {
     const { hasReleaseNotes } = await checkForReleaseNotes(
       getGlobalConfig().lastReleaseNotesSeen,
     )

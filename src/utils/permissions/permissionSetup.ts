@@ -53,7 +53,6 @@ import { AGENT_TOOL_NAME } from '../../tools/AgentTool/constants.js'
 import { BASH_TOOL_NAME } from '../../tools/BashTool/toolName.js'
 /* eslint-enable @typescript-eslint/no-require-imports */
 import { POWERSHELL_TOOL_NAME } from '../../tools/PowerShellTool/toolName.js'
-import { getToolsForDefaultPreset, parseToolPreset } from '../../tools.js'
 import {
   getFsImplementation,
   safeResolvePath,
@@ -646,23 +645,20 @@ export function transitionPermissionMode(
   return context
 }
 
-/**
- * Parse base tools specification from CLI
- * Handles both preset names (default, none) and custom tool lists
- */
-export function parseBaseToolsFromCLI(baseTools: string[]): string[] {
-  // Join all array elements and check if it's a single preset name
-  const joinedInput = baseTools.join(' ').trim()
-  const preset = parseToolPreset(joinedInput)
+function parseToolPresetName(preset: string): 'default' | null {
+  return preset.toLowerCase() === 'default' ? 'default' : null
+}
 
-  if (preset) {
+async function resolveBaseToolsFromCLI(baseTools: string[]): Promise<string[]> {
+  const joinedInput = baseTools.join(' ').trim()
+  const preset = parseToolPresetName(joinedInput)
+
+  if (preset === 'default') {
+    const { getToolsForDefaultPreset } = await import('../../tools.js')
     return getToolsForDefaultPreset()
   }
 
-  // Parse as a custom tool list using the same parsing logic as allowedTools/disallowedTools
-  const parsedTools = parseToolListFromCLI(baseTools)
-
-  return parsedTools
+  return parseToolListFromCLI(baseTools)
 }
 
 /**
@@ -888,6 +884,7 @@ export async function initializeToolPermissionContext({
   allowedToolsCli,
   disallowedToolsCli,
   baseToolsCli,
+  toolUniverseCli,
   permissionMode,
   allowDangerouslySkipPermissions,
   addDirs,
@@ -895,6 +892,7 @@ export async function initializeToolPermissionContext({
   allowedToolsCli: string[]
   disallowedToolsCli: string[]
   baseToolsCli?: string[]
+  toolUniverseCli?: string[]
   permissionMode: PermissionMode
   allowDangerouslySkipPermissions: boolean
   addDirs: string[]
@@ -915,11 +913,14 @@ export async function initializeToolPermissionContext({
   // If base tools are specified, automatically deny all tools NOT in the base set
   // We need to check if base tools were explicitly provided (not just empty default)
   if (baseToolsCli && baseToolsCli.length > 0) {
-    const baseToolsResult = parseBaseToolsFromCLI(baseToolsCli)
+    const baseToolsResult = await resolveBaseToolsFromCLI(baseToolsCli)
     // Normalize legacy tool names (e.g., 'Task' → 'Agent') so user-provided
     // base tool lists using old names still match canonical names.
     const baseToolsSet = new Set(baseToolsResult.map(normalizeLegacyToolName))
-    const allToolNames = getToolsForDefaultPreset()
+    const allToolNames =
+      toolUniverseCli && toolUniverseCli.length > 0
+        ? toolUniverseCli
+        : (await import('../../tools.js')).getToolsForDefaultPreset()
     const toolsToDisallow = allToolNames.filter(tool => !baseToolsSet.has(tool))
     parsedDisallowedToolsCli = [...parsedDisallowedToolsCli, ...toolsToDisallow]
   }
