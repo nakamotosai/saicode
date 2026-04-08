@@ -1355,10 +1355,17 @@ fn execute_edit_tool(input: &Value, session: &mut NativeToolSession) -> ToolExec
         }
     };
 
+    if session.snapshot(&resolved).is_none() {
+        session.update_snapshot(
+            &resolved,
+            current.content.clone(),
+            current.timestamp_ms,
+            false,
+        );
+    }
     let Some(snapshot) = session.snapshot(&resolved) else {
         return ToolExecution::Output(
-            "Edit error: File has not been read yet. Read it first before writing to it."
-                .to_string(),
+            "Edit error: failed to initialize file snapshot before editing.".to_string(),
         );
     };
     if snapshot.is_partial_view {
@@ -4340,6 +4347,35 @@ mod tests {
                 panic!("grep unexpectedly requested fallback: {reason}");
             }
         }
+    }
+
+    #[test]
+    fn edit_tool_bootstraps_snapshot_for_existing_file() {
+        let root = temp_dir("edit-without-read");
+        let file = root.join("sample.txt");
+        fs::write(&file, "alpha\n").expect("write sample");
+        let mut session = session(&root);
+
+        let output = execute_edit_tool(
+            &json!({
+                "file_path": file.to_string_lossy(),
+                "old_string": "alpha",
+                "new_string": "beta"
+            }),
+            &mut session,
+        );
+
+        match output {
+            ToolExecution::Output(text) => {
+                assert!(text.contains("updated successfully"));
+            }
+            ToolExecution::FallbackToRustFullCli(reason) => {
+                panic!("edit unexpectedly requested fallback: {reason}");
+            }
+        }
+
+        let contents = fs::read_to_string(&file).expect("read edited file");
+        assert_eq!(contents, "beta\n");
     }
 
     #[test]

@@ -31,7 +31,10 @@ use runtime::{
     ResolvedPermissionMode, RuntimeConfig, RuntimeError, Session, ToolError, ToolExecutor,
     UsageTracker,
 };
-use saicode_frontline::recovery::{get_provider_config, resolve_model, WireApi};
+use saicode_frontline::recovery::{
+    get_provider_config, is_degraded_function_invocation_error_text, resolve_model, WireApi,
+    DEFAULT_FAST_FALLBACK_MODEL_ID,
+};
 use serde_json::{json, Map, Value};
 use tools::GlobalToolRegistry;
 
@@ -1036,7 +1039,10 @@ fn handle_interactive_slash_command(
             println!("{}", result.message);
         }
         SlashCommand::Memory => println!("{}", render_memory_report()?),
-        _ => println!("{}", unsupported_slash_command_message(input, "Rust frontline")),
+        _ => println!(
+            "{}",
+            unsupported_slash_command_message(input, "Rust frontline")
+        ),
     }
 
     Ok(false)
@@ -1865,11 +1871,7 @@ fn render_status_report(
 }
 
 fn unsupported_slash_command_message(input: &str, surface: &str) -> String {
-    let command = input
-        .split_whitespace()
-        .next()
-        .unwrap_or("/unknown")
-        .trim();
+    let command = input.split_whitespace().next().unwrap_or("/unknown").trim();
     format!(
         "{surface} does not expose {command} on the current Rust surface. Use /help for supported commands."
     )
@@ -2154,13 +2156,14 @@ impl ApiClient for FrontlineApiClient<'_> {
     fn stream(&mut self, request: ApiRequest) -> Result<Vec<AssistantEvent>, RuntimeError> {
         let explicit_tool_matches =
             explicit_tool_matches_for_request(&request.messages, &self.tool_definitions);
+        let has_tool_results = request_contains_tool_results(&request.messages);
         let scoped_tool_definitions = if !explicit_tool_matches.is_empty() {
             explicit_tool_matches.clone()
         } else {
             self.tool_definitions.clone()
         };
         let mut system_prompt = request.system_prompt.clone();
-        if !explicit_tool_matches.is_empty() {
+        if !explicit_tool_matches.is_empty() && !has_tool_results {
             let tool_names = explicit_tool_matches
                 .iter()
                 .map(|definition| definition.name.as_str())
@@ -2169,40 +2172,71 @@ impl ApiClient for FrontlineApiClient<'_> {
             system_prompt.push(format!(
                 "The user explicitly requested these available tools: {tool_names}. Restrict yourself to those tools for this request and call one or more of them before answering. Do not claim that the interface cannot use them because they are available in this session."
             ));
+            system_prompt.push(
+                "When the user provided concrete values for required tool inputs, pass those values through exactly in the tool call instead of leaving arguments empty.".to_string(),
+            );
         }
-        let allow_tool_schema_fallback =
-            explicit_tool_matches.is_empty() && !scoped_tool_definitions.is_empty();
+        let tool_surface_enabled = !scoped_tool_definitions.is_empty();
+        let allow_tool_schema_fallback = explicit_tool_matches.is_empty() && tool_surface_enabled;
+        let effective_model = preferred_wire_model_for_request(&self.model, tool_surface_enabled);
+        let tool_choice = if !has_tool_results && explicit_tool_matches.len() == 1 {
+            Some(ToolChoice::Tool {
+                name: explicit_tool_matches[0].name.clone(),
+            })
+        } else if !self.tool_definitions.is_empty() {
+            Some(ToolChoice::Auto)
+        } else {
+            None
+        };
         let message_request = MessageRequest {
-            model: self.model.clone(),
+            model: effective_model.clone(),
             max_tokens: None,
             messages: convert_messages(&request.messages),
             system: (!system_prompt.is_empty()).then(|| system_prompt.join("\n\n")),
             tools: (!scoped_tool_definitions.is_empty()).then_some(scoped_tool_definitions),
-            tool_choice: (!self.tool_definitions.is_empty()).then_some(ToolChoice::Auto),
+            tool_choice,
             reasoning_effort: self.effort,
             stream: true,
         };
 
         self.runtime.block_on(async {
             if let Some(observer) = self.status_observer.as_deref_mut() {
+                if effective_model != self.model {
+                    observer("Tool-capable runtime is using gpt-5.4-mini for stable execution…");
+                }
                 observer("Sending request to model…");
             }
-            let mut stream = match self.client.stream_message(&message_request).await {
-                Ok(stream) => stream,
-                Err(error) if should_retry_without_tools(&error, allow_tool_schema_fallback) => {
-                    if let Some(observer) = self.status_observer.as_deref_mut() {
-                        observer("Model rejected tool schema; retrying without tools…");
+            let mut retry_request = message_request.clone();
+            let mut attempted_fast_model_fallback = false;
+            let mut attempted_tool_fallback = false;
+            let mut stream = loop {
+                match self.client.stream_message(&retry_request).await {
+                    Ok(stream) => break stream,
+                    Err(error)
+                        if !attempted_fast_model_fallback
+                            && should_retry_with_fast_model(&error, &retry_request.model) =>
+                    {
+                        attempted_fast_model_fallback = true;
+                        retry_request.model = DEFAULT_FAST_FALLBACK_MODEL_ID
+                            .trim_start_matches("cpa/")
+                            .to_string();
+                        if let Some(observer) = self.status_observer.as_deref_mut() {
+                            observer("Default qwen model unavailable; retrying with gpt-5.4-mini…");
+                        }
                     }
-                    self.client
-                        .stream_message(&MessageRequest {
-                            tools: None,
-                            tool_choice: None,
-                            ..message_request.clone()
-                        })
-                        .await
-                        .map_err(|retry_error| RuntimeError::new(retry_error.to_string()))?
+                    Err(error)
+                        if !attempted_tool_fallback
+                            && should_retry_without_tools(&error, allow_tool_schema_fallback) =>
+                    {
+                        attempted_tool_fallback = true;
+                        retry_request.tools = None;
+                        retry_request.tool_choice = None;
+                        if let Some(observer) = self.status_observer.as_deref_mut() {
+                            observer("Model rejected tool schema; retrying without tools…");
+                        }
+                    }
+                    Err(error) => return Err(RuntimeError::new(error.to_string())),
                 }
-                Err(error) => return Err(RuntimeError::new(error.to_string())),
             };
             if let Some(observer) = self.status_observer.as_deref_mut() {
                 observer("Waiting for model output…");
@@ -2270,6 +2304,8 @@ impl ApiClient for FrontlineApiClient<'_> {
                     },
                     ApiStreamEvent::ContentBlockStop(stop) => {
                         if let Some((id, name, input)) = pending_tools.remove(&stop.index) {
+                            let input =
+                                repair_tool_input_from_latest_user_text(&input, &request.messages);
                             if let Some(observer) = self.status_observer.as_deref_mut() {
                                 observer(&format!("Running tool: {name}"));
                             }
@@ -2333,6 +2369,27 @@ fn should_retry_without_tools(error: &ApiError, allow_tool_schema_fallback: bool
     }
 }
 
+fn preferred_wire_model_for_request(wire_model: &str, tool_surface_enabled: bool) -> String {
+    if tool_surface_enabled && wire_model.eq_ignore_ascii_case("qwen/qwen3.5-122b-a10b") {
+        return "gpt-5.4-mini".to_string();
+    }
+
+    wire_model.to_string()
+}
+
+fn should_retry_with_fast_model(error: &ApiError, wire_model: &str) -> bool {
+    match error {
+        ApiError::Api { body, .. } => {
+            wire_model.eq_ignore_ascii_case("qwen/qwen3.5-122b-a10b")
+                && is_degraded_function_invocation_error_text(body)
+        }
+        ApiError::RetriesExhausted { last_error, .. } => {
+            should_retry_with_fast_model(last_error, wire_model)
+        }
+        _ => false,
+    }
+}
+
 fn explicit_tool_matches_for_request(
     messages: &[ConversationMessage],
     tool_definitions: &[ToolDefinition],
@@ -2352,6 +2409,15 @@ fn explicit_tool_matches_for_request(
         .collect::<Vec<_>>()
 }
 
+fn request_contains_tool_results(messages: &[ConversationMessage]) -> bool {
+    messages.iter().any(|message| {
+        message
+            .blocks
+            .iter()
+            .any(|block| matches!(block, ContentBlock::ToolResult { .. }))
+    })
+}
+
 fn latest_user_text(messages: &[ConversationMessage]) -> Option<String> {
     messages
         .iter()
@@ -2369,6 +2435,108 @@ fn latest_user_text(messages: &[ConversationMessage]) -> Option<String> {
                 .join(" ")
         })
         .filter(|text| !text.trim().is_empty())
+}
+
+fn repair_tool_input_from_latest_user_text(
+    input: &str,
+    messages: &[ConversationMessage],
+) -> String {
+    let Some(user_text) = latest_user_text(messages) else {
+        return input.to_string();
+    };
+    let Some(candidate) = extract_first_json_object(&user_text) else {
+        return input.to_string();
+    };
+    let Some(candidate_object) = candidate.as_object().cloned() else {
+        return input.to_string();
+    };
+
+    let mut repaired = match serde_json::from_str::<Value>(input).ok() {
+        Some(Value::Object(object)) => Value::Object(object),
+        Some(_) => candidate.clone(),
+        None => candidate.clone(),
+    };
+
+    if let Some(repaired_object) = repaired.as_object_mut() {
+        for (key, value) in &candidate_object {
+            let should_replace = repaired_object
+                .get(key)
+                .is_none_or(|current| match current {
+                    Value::Null => true,
+                    Value::String(text) => {
+                        let normalized = text.trim().to_ascii_lowercase();
+                        normalized.is_empty()
+                            || matches!(
+                                normalized.as_str(),
+                                "ignored" | "ignore" | "placeholder" | "dummy"
+                            )
+                    }
+                    Value::Object(object) => object.is_empty(),
+                    Value::Array(array) => array.is_empty(),
+                    _ => false,
+                });
+            if should_replace {
+                repaired_object.insert(key.clone(), value.clone());
+            }
+        }
+    }
+
+    match serde_json::to_string(&repaired) {
+        Ok(serialized) => serialized,
+        Err(_) => input.to_string(),
+    }
+}
+
+fn extract_first_json_object(text: &str) -> Option<Value> {
+    let bytes = text.as_bytes();
+    let mut start = 0usize;
+    while start < bytes.len() {
+        let Some(open_offset) = text[start..].find('{') else {
+            return None;
+        };
+        let open = start + open_offset;
+        let mut depth = 0usize;
+        let mut in_string = false;
+        let mut escape = false;
+        for (offset, ch) in text[open..].char_indices() {
+            if in_string {
+                if escape {
+                    escape = false;
+                    continue;
+                }
+                match ch {
+                    '\\' => escape = true,
+                    '"' => in_string = false,
+                    _ => {}
+                }
+                continue;
+            }
+
+            match ch {
+                '"' => in_string = true,
+                '{' => depth += 1,
+                '}' => {
+                    depth = depth.saturating_sub(1);
+                    if depth == 0 {
+                        let end = open + offset + ch.len_utf8();
+                        let slice = &text[open..end];
+                        if let Ok(value) = serde_json::from_str::<Value>(slice) {
+                            if value.is_object() {
+                                return Some(value);
+                            }
+                        }
+                        start = end;
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+        if depth > 0 {
+            return None;
+        }
+    }
+    None
 }
 
 fn normalize_tool_hint_text(value: &str) -> String {
@@ -2759,8 +2927,10 @@ mod tests {
         bridge_session_payload, build_tool_surface, collect_tool_option_values,
         execute_dynamic_mcp_tool, explicit_tool_matches_for_request, join_optional_args,
         looks_like_tool_option_value, parse_effort, parse_output_format, parse_permission_mode,
-        redact_sensitive_json_string, registry_display_name, resolved_permission_mode,
-        should_retry_without_tools, CliArgs, OutputFormat, RuntimeSurface, ToolSurface,
+        preferred_wire_model_for_request, redact_sensitive_json_string, registry_display_name,
+        repair_tool_input_from_latest_user_text, resolved_permission_mode,
+        should_retry_with_fast_model, should_retry_without_tools, CliArgs, OutputFormat,
+        RuntimeSurface, ToolSurface,
     };
     use api::{ApiError, ToolDefinition};
     use runtime::{
@@ -3193,6 +3363,68 @@ mod tests {
         };
 
         assert!(!should_retry_without_tools(&error, true));
+    }
+
+    #[test]
+    fn retries_qwen_degraded_model_errors_with_fast_model() {
+        let error = ApiError::Api {
+            status: "400".parse().expect("status code"),
+            error_type: None,
+            message: None,
+            body: "{\"status\":400,\"title\":\"Bad Request\",\"detail\":\"Function id 'abc': DEGRADED function cannot be invoked\"}".to_string(),
+            retryable: false,
+        };
+
+        assert!(should_retry_with_fast_model(
+            &error,
+            "qwen/qwen3.5-122b-a10b"
+        ));
+        assert!(!should_retry_with_fast_model(&error, "gpt-5.4-mini"));
+    }
+
+    #[test]
+    fn tool_capable_runtime_prefers_fast_wire_model() {
+        assert_eq!(
+            preferred_wire_model_for_request("qwen/qwen3.5-122b-a10b", true),
+            "gpt-5.4-mini"
+        );
+        assert_eq!(
+            preferred_wire_model_for_request("gpt-5.4-mini", true),
+            "gpt-5.4-mini"
+        );
+        assert_eq!(
+            preferred_wire_model_for_request("qwen/qwen3.5-122b-a10b", false),
+            "qwen/qwen3.5-122b-a10b"
+        );
+    }
+
+    #[test]
+    fn repairs_empty_tool_input_from_latest_user_json() {
+        let messages = vec![ConversationMessage {
+            role: MessageRole::User,
+            blocks: vec![ContentBlock::Text {
+                text: "Call mcp__alpha__echo with JSON arguments {\"text\":\"acceptance\"}."
+                    .to_string(),
+            }],
+            usage: None,
+        }];
+
+        assert_eq!(
+            repair_tool_input_from_latest_user_text("{}", &messages),
+            "{\"text\":\"acceptance\"}"
+        );
+        assert_eq!(
+            repair_tool_input_from_latest_user_text("{\"text\":\"\"}", &messages),
+            "{\"text\":\"acceptance\"}"
+        );
+        assert_eq!(
+            repair_tool_input_from_latest_user_text("{\"text\":\"already\"}", &messages),
+            "{\"text\":\"already\"}"
+        );
+        assert_eq!(
+            repair_tool_input_from_latest_user_text("{\"text\":\"ignored\"}", &messages),
+            "{\"text\":\"acceptance\"}"
+        );
     }
 
     #[test]

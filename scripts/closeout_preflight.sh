@@ -23,6 +23,46 @@ log() {
   printf '[saicode-closeout] %s\n' "$*"
 }
 
+capture_saicode_pids() {
+  local needle_a="${1:-}"
+  local needle_b="${2:-}"
+
+  {
+    pgrep -af "$NATIVE_LAUNCHER|$RUST_FULL_CLI" 2>/dev/null || true
+  } | awk -v a="$needle_a" -v b="$needle_b" '
+    {
+      pid = $1
+      $1 = ""
+      sub(/^ /, "", $0)
+      if ((a == "" || index($0, a)) && (b == "" || index($0, b))) {
+        print pid
+      }
+    }
+  ' | sort -u
+}
+
+wait_for_probe_processes_to_exit() {
+  local baseline="$1"
+  local needle_a="${2:-}"
+  local needle_b="${3:-}"
+  local current
+  local extra
+  local attempt
+
+  for attempt in $(seq 1 20); do
+    current="$(capture_saicode_pids "$needle_a" "$needle_b")"
+    extra="$(comm -13 <(printf '%s\n' "$baseline" | sed '/^$/d') <(printf '%s\n' "$current" | sed '/^$/d'))"
+    if [[ -z "$extra" ]]; then
+      return 0
+    fi
+    sleep 0.25
+  done
+
+  printf 'saicode process residue detected after probe: %s\n' "$extra" >&2
+  pgrep -af "$NATIVE_LAUNCHER|$RUST_FULL_CLI" >&2 || true
+  exit 1
+}
+
 SCRIPT_PATH="$(resolve_script_path "${BASH_SOURCE[0]}")"
 SCRIPT_DIR="$(cd -P "$(dirname "$SCRIPT_PATH")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -85,10 +125,15 @@ run_stream_json_probe() {
 }
 
 run_interactive_progress_probe() {
+  local baseline
   local output
 
   log "interactive tool progress probe"
+  baseline="$(capture_saicode_pids "--bare --allowedTools Read")"
+  bridge_baseline="$(capture_saicode_pids "ui-bridge")"
   output="$(printf 'Use Read to inspect README.md and reply with its first line only.\n/exit\n' | timeout 120 "$REPO_ROOT/bin/saicode" --bare --allowedTools Read)"
+  wait_for_probe_processes_to_exit "$baseline" "--bare --allowedTools Read"
+  wait_for_probe_processes_to_exit "$bridge_baseline" "ui-bridge"
   if [[ "$output" != *"[tool] Read"* || "$output" != *"# saicode"* ]]; then
     printf 'expected interactive output to show tool progress and README line, got: %s\n' "$output" >&2
     exit 1

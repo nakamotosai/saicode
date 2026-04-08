@@ -290,6 +290,9 @@ impl MessageStream {
                     for parsed in self.parser.push(&chunk)? {
                         self.pending.extend(self.state.ingest_chunk(parsed)?);
                     }
+                    if self.parser.take_done() {
+                        self.done = true;
+                    }
                 }
                 None => {
                     self.done = true;
@@ -302,6 +305,7 @@ impl MessageStream {
 #[derive(Debug, Default)]
 struct OpenAiSseParser {
     buffer: Vec<u8>,
+    done: bool,
 }
 
 impl OpenAiSseParser {
@@ -314,12 +318,21 @@ impl OpenAiSseParser {
         let mut events = Vec::new();
 
         while let Some(frame) = next_sse_frame(&mut self.buffer) {
-            if let Some(event) = parse_sse_frame(&frame)? {
-                events.push(event);
+            match parse_sse_frame(&frame)? {
+                Some(SseFrame::Chunk(event)) => events.push(event),
+                Some(SseFrame::Done) => {
+                    self.done = true;
+                    break;
+                }
+                None => {}
             }
         }
 
         Ok(events)
+    }
+
+    fn take_done(&mut self) -> bool {
+        std::mem::take(&mut self.done)
     }
 }
 
@@ -928,7 +941,12 @@ fn next_sse_frame(buffer: &mut Vec<u8>) -> Option<String> {
     Some(String::from_utf8_lossy(&frame[..frame_len]).into_owned())
 }
 
-fn parse_sse_frame(frame: &str) -> Result<Option<ChatCompletionChunk>, ApiError> {
+enum SseFrame {
+    Chunk(ChatCompletionChunk),
+    Done,
+}
+
+fn parse_sse_frame(frame: &str) -> Result<Option<SseFrame>, ApiError> {
     let trimmed = frame.trim();
     if trimmed.is_empty() {
         return Ok(None);
@@ -948,9 +966,10 @@ fn parse_sse_frame(frame: &str) -> Result<Option<ChatCompletionChunk>, ApiError>
     }
     let payload = data_lines.join("\n");
     if payload == "[DONE]" {
-        return Ok(None);
+        return Ok(Some(SseFrame::Done));
     }
     serde_json::from_str(&payload)
+        .map(SseFrame::Chunk)
         .map(Some)
         .map_err(ApiError::from)
 }
@@ -1047,8 +1066,8 @@ impl StringExt for String {
 mod tests {
     use super::{
         build_chat_completion_request, chat_completions_endpoint, normalize_finish_reason,
-        openai_tool_choice, parse_tool_arguments, ChatCompletionChunk, ChatCompletionResponse,
-        OpenAiCompatClient, OpenAiCompatConfig,
+        openai_tool_choice, parse_sse_frame, parse_tool_arguments, ChatCompletionChunk,
+        ChatCompletionResponse, OpenAiCompatClient, OpenAiCompatConfig, OpenAiSseParser, SseFrame,
     };
     use crate::error::ApiError;
     use crate::types::{
@@ -1343,5 +1362,23 @@ mod tests {
         .expect("chunk should deserialize");
 
         assert!(chunk.choices[0].delta.tool_calls.is_empty());
+    }
+
+    #[test]
+    fn done_marker_sets_parser_done_without_waiting_for_eof() {
+        let mut parser = OpenAiSseParser::new();
+        let chunks = parser
+            .push(b"data: {\"id\":\"chatcmpl_1\",\"choices\":[{\"delta\":{\"content\":\"ok\"}}]}\n\ndata: [DONE]\n\n")
+            .expect("parser should accept done marker");
+
+        assert_eq!(chunks.len(), 1);
+        assert!(parser.take_done());
+        assert!(!parser.take_done());
+    }
+
+    #[test]
+    fn done_marker_parses_as_terminal_frame() {
+        let frame = parse_sse_frame("data: [DONE]").expect("done marker should parse");
+        assert!(matches!(frame, Some(SseFrame::Done)));
     }
 }

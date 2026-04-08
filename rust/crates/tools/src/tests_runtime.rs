@@ -37,9 +37,27 @@ fn given_zero_duration_when_sleep_then_succeeds() {
 
 #[test]
 fn lsp_workspace_symbols_uses_real_language_server() {
+    let _guard = env_lock()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     if !command_exists("rust-analyzer") {
         return;
     }
+
+    let workspace_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .ancestors()
+        .nth(2)
+        .expect("rust workspace root")
+        .to_path_buf();
+    struct CwdRestore(std::path::PathBuf);
+    impl Drop for CwdRestore {
+        fn drop(&mut self) {
+            let _ = std::env::set_current_dir(&self.0);
+        }
+    }
+
+    let restore = CwdRestore(std::env::current_dir().expect("cwd"));
+    std::env::set_current_dir(&workspace_root).expect("set rust workspace root");
 
     let result = execute_tool(
         "LSP",
@@ -49,6 +67,7 @@ fn lsp_workspace_symbols_uses_real_language_server() {
         }),
     )
     .expect("LSP workspace_symbols should succeed");
+    drop(restore);
 
     let output: serde_json::Value = serde_json::from_str(&result).expect("json");
     assert_eq!(output["operation"], "workspace_symbols");

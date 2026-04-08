@@ -417,7 +417,7 @@ fn should_use_lightweight_headless_print_entrypoint(cli_args: &[String]) -> bool
 
 fn should_use_native_local_tools_entrypoint(cli_args: &[String]) -> bool {
     let is_print_mode = cli_args.iter().any(|arg| arg == "-p" || arg == "--print");
-    if !is_print_mode || cli_args.iter().any(|arg| arg == "--bare") {
+    if !is_print_mode {
         return false;
     }
 
@@ -997,7 +997,7 @@ mod tests {
         );
         assert_eq!(
             determine_route(&args(&["-p", "--bare", "hello", "--allowedTools", "Read"])),
-            Route::FullCli
+            Route::NativeLocalTools
         );
         assert_eq!(
             determine_route(&args(&["-p", "hello", "--allowedTools", "Bash"])),

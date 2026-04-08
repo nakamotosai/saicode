@@ -5,8 +5,8 @@ use std::path::PathBuf;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use api::{
-    ContentBlockDelta, InputMessage, MessageResponse, OpenAiCompatClient, OpenAiCompatConfig,
-    OutputContentBlock, StreamEvent, Usage,
+    ApiError, ContentBlockDelta, InputMessage, MessageResponse, OpenAiCompatClient,
+    OpenAiCompatConfig, OutputContentBlock, StreamEvent, Usage,
 };
 use runtime::{ConfigLoader, ProfileResolver, ProviderLauncher};
 use saicode_core_adapter::{
@@ -15,6 +15,7 @@ use saicode_core_adapter::{
 use serde_json::{json, Value};
 
 const NO_CONTENT_MESSAGE: &str = "(no content)";
+const DEFAULT_FAST_FALLBACK_WIRE_MODEL: &str = "gpt-5.4-mini";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum OutputFormat {
@@ -42,10 +43,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let runtime_config = ConfigLoader::default_for(&cwd).load()?;
     let resolved = ProfileResolver::resolve(&runtime_config, None, args.model.as_deref())?;
     let launch = ProviderLauncher::prepare(&resolved)?;
+    let execution_model = preferred_wire_model_for_execution(&launch.model);
 
     let request = build_message_request(SaicodeRequestEnvelope {
         selection: SaicodeModelSelection {
-            model: launch.model.clone(),
+            model: execution_model,
             effort: args.effort,
         },
         max_tokens: args.max_tokens,
@@ -68,7 +70,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             Duration::from_secs(2),
         );
     let (response, text) =
-        stream_response(&client, &request, args.output_format == OutputFormat::Text).await?;
+        match stream_response(&client, &request, args.output_format == OutputFormat::Text).await {
+            Ok(result) => result,
+            Err(error) if should_retry_with_fast_model(&error, request.model.as_str()) => {
+                let mut fallback_request = request.clone();
+                fallback_request.model = DEFAULT_FAST_FALLBACK_WIRE_MODEL.to_string();
+                stream_response(
+                    &client,
+                    &fallback_request,
+                    args.output_format == OutputFormat::Text,
+                )
+                .await?
+            }
+            Err(error) => return Err(Box::new(error) as Box<dyn std::error::Error>),
+        };
 
     match args.output_format {
         OutputFormat::Text => {
@@ -92,7 +107,7 @@ async fn stream_response(
     client: &OpenAiCompatClient,
     request: &api::MessageRequest,
     stream_to_stdout: bool,
-) -> Result<(MessageResponse, String), Box<dyn std::error::Error>> {
+) -> Result<(MessageResponse, String), ApiError> {
     let mut stream = client.stream_message(request).await?;
     let mut response = None;
     let mut text = String::new();
@@ -143,6 +158,31 @@ async fn stream_response(
         vec![OutputContentBlock::Text { text: text.clone() }]
     };
     Ok((response, text))
+}
+
+fn should_retry_with_fast_model(error: &ApiError, wire_model: &str) -> bool {
+    match error {
+        ApiError::Api { body, .. } => {
+            wire_model.eq_ignore_ascii_case("qwen/qwen3.5-122b-a10b")
+                && is_degraded_function_invocation_error_text(body)
+        }
+        ApiError::RetriesExhausted { last_error, .. } => {
+            should_retry_with_fast_model(last_error, wire_model)
+        }
+        _ => false,
+    }
+}
+
+fn is_degraded_function_invocation_error_text(error_text: &str) -> bool {
+    error_text.contains("Function id") && error_text.contains("DEGRADED function cannot be invoked")
+}
+
+fn preferred_wire_model_for_execution(wire_model: &str) -> String {
+    if wire_model.eq_ignore_ascii_case("qwen/qwen3.5-122b-a10b") {
+        return DEFAULT_FAST_FALLBACK_WIRE_MODEL.to_string();
+    }
+
+    wire_model.to_string()
 }
 
 fn parse_args(args: Vec<String>) -> Result<Args, String> {
@@ -401,7 +441,11 @@ fn usage() -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_args, parse_effort, Args, OutputFormat};
+    use super::{
+        parse_args, parse_effort, preferred_wire_model_for_execution, should_retry_with_fast_model,
+        Args, OutputFormat,
+    };
+    use api::ApiError;
     use saicode_core_adapter::SaicodeEffortLevel;
     use std::fs;
     use std::path::PathBuf;
@@ -492,6 +536,35 @@ mod tests {
         assert_eq!(
             parse_effort("xhigh").expect("xhigh"),
             SaicodeEffortLevel::Max
+        );
+    }
+
+    #[test]
+    fn retries_qwen_degraded_errors_with_fast_model() {
+        let error = ApiError::Api {
+            status: "400".parse().expect("status code"),
+            error_type: None,
+            message: None,
+            body: "Function id 'abc': DEGRADED function cannot be invoked".to_string(),
+            retryable: false,
+        };
+
+        assert!(should_retry_with_fast_model(
+            &error,
+            "qwen/qwen3.5-122b-a10b"
+        ));
+        assert!(!should_retry_with_fast_model(&error, "gpt-5.4-mini"));
+    }
+
+    #[test]
+    fn prefers_fast_execution_model_for_qwen_baseline() {
+        assert_eq!(
+            preferred_wire_model_for_execution("qwen/qwen3.5-122b-a10b"),
+            "gpt-5.4-mini"
+        );
+        assert_eq!(
+            preferred_wire_model_for_execution("gpt-5.4-mini"),
+            "gpt-5.4-mini"
         );
     }
 }

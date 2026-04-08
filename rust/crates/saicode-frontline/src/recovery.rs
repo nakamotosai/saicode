@@ -11,6 +11,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 const NO_CONTENT_MESSAGE: &str = "(no content)";
 const SYNTHETIC_MODEL: &str = "<synthetic>";
 const DEFAULT_MODEL_ID: &str = "cpa/qwen/qwen3.5-122b-a10b";
+pub const DEFAULT_FAST_FALLBACK_MODEL_ID: &str = "cpa/gpt-5.4-mini";
+const DEFAULT_WIRE_MODEL_ID: &str = "qwen/qwen3.5-122b-a10b";
 const DEFAULT_TIMEOUT_MS: u64 = 600_000;
 
 const RECOVERY_HELP_TEXT: &str = r#"Usage: saicode [options] [prompt]
@@ -379,18 +381,39 @@ pub fn run_native_recovery(args: &[String], version: &str) -> Result<(), String>
     }
 
     let resolved_model = resolve_model(parsed.model.as_deref());
-    let provider = get_provider_config(&resolved_model)?;
+    let execution_model = if should_prefer_fast_runtime_model(&resolved_model.model) {
+        resolve_model(Some(DEFAULT_FAST_FALLBACK_MODEL_ID))
+    } else {
+        resolved_model.clone()
+    };
+    let provider = get_provider_config(&execution_model)?;
     let system_prompt = join_system_prompt(
         parsed.system_prompt.as_deref(),
         parsed.append_system_prompt.as_deref(),
     );
-    let response = query_saicode(
+    let response = match query_saicode(
         &prompt,
         system_prompt.as_deref(),
-        &resolved_model,
+        &execution_model,
         &provider,
         parsed.output_format == OutputFormat::Text,
-    )?;
+    ) {
+        Ok(response) => response,
+        Err(error_text)
+            if should_retry_with_fast_fallback_model(&execution_model.model, &error_text) =>
+        {
+            let fallback_model = resolve_model(Some(DEFAULT_FAST_FALLBACK_MODEL_ID));
+            let fallback_provider = get_provider_config(&fallback_model)?;
+            query_saicode(
+                &prompt,
+                system_prompt.as_deref(),
+                &fallback_model,
+                &fallback_provider,
+                parsed.output_format == OutputFormat::Text,
+            )?
+        }
+        Err(error_text) => return Err(error_text),
+    };
 
     match parsed.output_format {
         OutputFormat::Text => {
@@ -596,6 +619,19 @@ pub fn resolve_model(model_input: Option<&str>) -> ResolvedModel {
         model: resolved_id,
         max_output_tokens: 32768,
     }
+}
+
+pub fn is_degraded_function_invocation_error_text(error_text: &str) -> bool {
+    error_text.contains("Function id") && error_text.contains("DEGRADED function cannot be invoked")
+}
+
+pub fn should_prefer_fast_runtime_model(wire_model: &str) -> bool {
+    wire_model.eq_ignore_ascii_case(DEFAULT_WIRE_MODEL_ID)
+}
+
+pub fn should_retry_with_fast_fallback_model(wire_model: &str, error_text: &str) -> bool {
+    should_prefer_fast_runtime_model(wire_model)
+        && is_degraded_function_invocation_error_text(error_text)
 }
 
 fn get_config_home_dir() -> PathBuf {
@@ -870,6 +906,30 @@ pub(crate) fn execute_provider_chat_completions_stream(
         let chunk = &read_buffer[..bytes_read];
         raw_stdout.extend_from_slice(chunk);
         stream_state.ingest_bytes(chunk, stream_to_stdout)?;
+        if stream_state.done_received {
+            break;
+        }
+    }
+
+    if stream_state.done_received {
+        drop(stdout);
+        match child.try_wait() {
+            Ok(Some(_)) => {}
+            Ok(None) => {
+                let _ = child.kill();
+                let _ = child.wait();
+            }
+            Err(_) => {}
+        }
+
+        if stream_to_stdout && !stream_state.text.is_empty() {
+            io::stdout()
+                .write_all(b"\n")
+                .and_then(|_| io::stdout().flush())
+                .map_err(|error| format!("Failed to flush stdout: {error}"))?;
+        }
+
+        return Ok(stream_state.finish());
     }
 
     let output = child
@@ -915,14 +975,20 @@ struct ChatCompletionStreamState {
     text: String,
     usage: Usage,
     tool_calls: BTreeMap<u32, StreamedToolCallState>,
+    done_received: bool,
 }
 
 impl ChatCompletionStreamState {
     fn ingest_bytes(&mut self, bytes: &[u8], stream_to_stdout: bool) -> Result<(), String> {
         self.frame_buffer.extend_from_slice(bytes);
         while let Some(frame) = next_sse_frame(&mut self.frame_buffer) {
-            if let Some(chunk) = parse_sse_frame(&frame)? {
-                self.ingest_chunk(chunk, stream_to_stdout)?;
+            match parse_sse_frame(&frame)? {
+                Some(SseFrame::Chunk(chunk)) => self.ingest_chunk(chunk, stream_to_stdout)?,
+                Some(SseFrame::Done) => {
+                    self.done_received = true;
+                    break;
+                }
+                None => {}
             }
         }
         Ok(())
@@ -1005,7 +1071,12 @@ fn next_sse_frame(buffer: &mut Vec<u8>) -> Option<String> {
     Some(String::from_utf8_lossy(&frame[..frame_len]).into_owned())
 }
 
-fn parse_sse_frame(frame: &str) -> Result<Option<ChatCompletionChunk>, String> {
+enum SseFrame {
+    Chunk(ChatCompletionChunk),
+    Done,
+}
+
+fn parse_sse_frame(frame: &str) -> Result<Option<SseFrame>, String> {
     let trimmed = frame.trim();
     if trimmed.is_empty() {
         return Ok(None);
@@ -1026,10 +1097,11 @@ fn parse_sse_frame(frame: &str) -> Result<Option<ChatCompletionChunk>, String> {
 
     let payload = data_lines.join("\n");
     if payload == "[DONE]" {
-        return Ok(None);
+        return Ok(Some(SseFrame::Done));
     }
 
     serde_json::from_str(&payload)
+        .map(SseFrame::Chunk)
         .map(Some)
         .map_err(|error| format!("Failed to parse SSE frame: {error}"))
 }
@@ -1264,8 +1336,10 @@ type HeaderMap = HashMap<String, String>;
 #[cfg(test)]
 mod tests {
     use super::{
-        get_provider_config, parse_recovery_args, resolve_model, resolve_model_id,
-        should_handle_natively, OutputFormat, RecoveryCommand,
+        get_provider_config, is_degraded_function_invocation_error_text, parse_recovery_args,
+        parse_sse_frame, resolve_model, resolve_model_id, should_handle_natively,
+        should_prefer_fast_runtime_model, should_retry_with_fast_fallback_model,
+        ChatCompletionStreamState, OutputFormat, RecoveryCommand, SseFrame,
     };
     use std::env;
     use std::fs;
@@ -1420,5 +1494,41 @@ mod tests {
 
         let _ = fs::remove_file(config_dir.join("config.json"));
         let _ = fs::remove_dir(&config_dir);
+    }
+
+    #[test]
+    fn done_marker_parses_as_terminal_frame() {
+        let frame = parse_sse_frame("data: [DONE]").expect("done marker should parse");
+        assert!(matches!(frame, Some(SseFrame::Done)));
+    }
+
+    #[test]
+    fn stream_state_marks_done_when_done_marker_arrives() {
+        let mut state = ChatCompletionStreamState::default();
+        state
+            .ingest_bytes(
+                b"data: {\"id\":\"chatcmpl_1\",\"choices\":[{\"delta\":{\"content\":\"ok\"}}]}\n\ndata: [DONE]\n\n",
+                false,
+            )
+            .expect("stream state should accept done marker");
+
+        assert!(state.done_received);
+        assert_eq!(state.text, "ok");
+    }
+
+    #[test]
+    fn detects_degraded_qwen_invocation_for_fast_fallback() {
+        let error_text = "Function id 'abc': DEGRADED function cannot be invoked";
+        assert!(is_degraded_function_invocation_error_text(error_text));
+        assert!(should_prefer_fast_runtime_model("qwen/qwen3.5-122b-a10b"));
+        assert!(!should_prefer_fast_runtime_model("gpt-5.4-mini"));
+        assert!(should_retry_with_fast_fallback_model(
+            "qwen/qwen3.5-122b-a10b",
+            error_text
+        ));
+        assert!(!should_retry_with_fast_fallback_model(
+            "gpt-5.4-mini",
+            error_text
+        ));
     }
 }
