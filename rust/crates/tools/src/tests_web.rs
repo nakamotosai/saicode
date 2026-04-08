@@ -32,8 +32,38 @@ impl Drop for ScopedEnvVar {
     }
 }
 
+fn has_webfetch_provider_credentials() -> bool {
+    for key in ["CPA_API_KEY", "CLIPROXYAPI_API_KEY", "OPENAI_API_KEY"] {
+        if env::var(key).ok().filter(|value| !value.trim().is_empty()).is_some() {
+            return true;
+        }
+    }
+
+    let Some(home) = env::var_os("HOME") else {
+        return false;
+    };
+    let config_path = std::path::Path::new(&home).join(".saicode/config.json");
+    let Ok(raw) = std::fs::read_to_string(config_path) else {
+        return false;
+    };
+    let Ok(json) = serde_json::from_str::<serde_json::Value>(&raw) else {
+        return false;
+    };
+    ["cpa", "cliproxyapi"].iter().any(|provider| {
+        json.get("providers")
+            .and_then(|providers| providers.get(*provider))
+            .and_then(|provider| provider.get("apiKey").or_else(|| provider.get("api_key")))
+            .and_then(serde_json::Value::as_str)
+            .map(|value| !value.trim().is_empty())
+            .unwrap_or(false)
+    })
+}
+
 #[test]
 fn web_fetch_returns_prompt_aware_summary() {
+    if !has_webfetch_provider_credentials() {
+        return;
+    }
     let server = TestServer::spawn(Arc::new(|request_line: &str| {
         assert!(request_line.starts_with("GET /page "));
         HttpResponse::html(
@@ -67,6 +97,9 @@ fn web_fetch_returns_prompt_aware_summary() {
 
 #[test]
 fn web_fetch_supports_plain_text_and_rejects_invalid_url() {
+    if !has_webfetch_provider_credentials() {
+        return;
+    }
     let server = TestServer::spawn(Arc::new(|request_line: &str| {
         assert!(request_line.starts_with("GET /plain "));
         HttpResponse::text(200, "OK", "plain text response")

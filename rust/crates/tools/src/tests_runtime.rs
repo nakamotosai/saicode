@@ -6,6 +6,24 @@ use super::execute_tool;
 use super::shell::command_exists;
 use super::test_support::env_lock;
 
+fn lsp_server_is_runnable() -> bool {
+    if let Ok(server) = std::env::var("SAICODE_LSP_SERVER_RUST") {
+        if !server.trim().is_empty() {
+            return std::process::Command::new(server.trim())
+                .arg("--version")
+                .status()
+                .map(|status| status.success())
+                .unwrap_or(false);
+        }
+    }
+
+    std::process::Command::new("sh")
+        .args(["-lc", "rust-analyzer --version >/dev/null 2>&1"])
+        .status()
+        .map(|status| status.success())
+        .unwrap_or(false)
+}
+
 #[test]
 fn sleep_waits_and_reports_duration() {
     let started = std::time::Instant::now();
@@ -40,7 +58,7 @@ fn lsp_workspace_symbols_uses_real_language_server() {
     let _guard = env_lock()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    if !command_exists("rust-analyzer") {
+    if !lsp_server_is_runnable() {
         return;
     }
 

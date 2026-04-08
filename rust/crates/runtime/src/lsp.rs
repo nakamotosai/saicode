@@ -155,30 +155,34 @@ impl LspClient {
                 .map(|path| path.display().to_string());
             command.current_dir(workspace_root);
             command
-        } else if std::process::Command::new("rustup")
-            .args(["toolchain", "list"])
-            .output()
-            .map(|output| output.status.success())
-            .unwrap_or(false)
-        {
-            let mut command = Command::new("rustup");
-            command.args(["run", "stable-aarch64-unknown-linux-gnu", "rust-analyzer"]);
+        } else if let Some(bin) = resolve_command_path("rust-analyzer") {
+            let mut command = Command::new(&bin);
+            prepend_path = Path::new(&bin)
+                .parent()
+                .map(|path| path.display().to_string());
+            command.current_dir(workspace_root);
+            command
+        } else if let Some(bin) = resolve_rustup_rust_analyzer_path() {
+            let mut command = Command::new(&bin);
+            prepend_path = Path::new(&bin)
+                .parent()
+                .map(|path| path.display().to_string());
             command.current_dir(workspace_root);
             command
         } else {
-            let mut command = Command::new("rust-analyzer");
-            command.current_dir(workspace_root);
-            command
+            return Err(
+                "failed to start rust-analyzer; install it with `rustup component add rust-analyzer` or set SAICODE_LSP_SERVER_RUST".to_string(),
+            );
         };
         if let Some(prefix) = prepend_path {
             let current = std::env::var("PATH").unwrap_or_default();
             command.env("PATH", format!("{prefix}:{current}"));
         }
-        command.env(
-            "RUSTUP_TOOLCHAIN",
-            std::env::var("RUSTUP_TOOLCHAIN")
-                .unwrap_or_else(|_| "stable-aarch64-unknown-linux-gnu".to_string()),
-        );
+        if let Ok(toolchain) = std::env::var("RUSTUP_TOOLCHAIN") {
+            if !toolchain.trim().is_empty() {
+                command.env("RUSTUP_TOOLCHAIN", toolchain);
+            }
+        }
         command
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -318,6 +322,50 @@ impl LspClient {
         })
         .await
         .map_err(|_| "timed out waiting for LSP server response".to_string())?
+    }
+}
+
+fn resolve_command_path(command: &str) -> Option<String> {
+    let output = std::process::Command::new("sh")
+        .args(["-lc", &format!("command -v {command}")])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let path = stdout.lines().next()?.trim();
+    if path.is_empty() {
+        None
+    } else {
+        Some(path.to_string())
+    }
+}
+
+fn resolve_rustup_rust_analyzer_path() -> Option<String> {
+    let mut command = std::process::Command::new("rustup");
+    if let Ok(toolchain) = std::env::var("RUSTUP_TOOLCHAIN") {
+        if !toolchain.trim().is_empty() {
+            command.args(["which", "--toolchain", toolchain.trim(), "rust-analyzer"]);
+        } else {
+            command.args(["which", "rust-analyzer"]);
+        }
+    } else {
+        command.args(["which", "rust-analyzer"]);
+    }
+
+    let output = command.output().ok()?;
+    if !output.status.success() {
+        return None;
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let path = stdout.trim();
+    if path.is_empty() {
+        None
+    } else {
+        Some(path.to_string())
     }
 }
 
