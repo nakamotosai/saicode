@@ -18,6 +18,10 @@ jobs:
           workspaces: |
             rust
             native/saicode-launcher
+      - name: Install system test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ripgrep
       - name: Verify native launcher tests
         run: cargo test --manifest-path native/saicode-launcher/Cargo.toml
       - name: Verify Rust workspace tests
