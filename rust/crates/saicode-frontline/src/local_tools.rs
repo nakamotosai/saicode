@@ -2474,6 +2474,24 @@ fn get_optional_glob_search_path(input: &Value, cwd: &Path) -> Result<PathBuf, S
     }
 }
 
+fn canonicalize_cwd_root(cwd: &Path) -> Result<PathBuf, String> {
+    fs::canonicalize(cwd)
+        .map_err(|error| format!("Failed to resolve current working directory {}: {error}", cwd.display()))
+}
+
+fn ensure_within_cwd(cwd: &Path, canonical: &Path) -> Result<(), String> {
+    let canonical_cwd = canonicalize_cwd_root(cwd)?;
+    if canonical.starts_with(&canonical_cwd) {
+        Ok(())
+    } else {
+        Err(format!(
+            "{} is outside the current working directory {}; native local-tools mode only supports cwd-contained paths",
+            canonical.display(),
+            cwd.display()
+        ))
+    }
+}
+
 fn resolve_path_within_cwd(
     cwd: &Path,
     raw_path: &str,
@@ -2500,13 +2518,7 @@ fn resolve_path_within_cwd(
 
     let canonical = fs::canonicalize(&candidate)
         .map_err(|error| format!("Failed to resolve {}: {error}", candidate.display()))?;
-    if !canonical.starts_with(cwd) {
-        return Err(format!(
-            "{} is outside the current working directory {}; native local-tools mode only supports cwd-contained paths",
-            canonical.display(),
-            cwd.display()
-        ));
-    }
+    ensure_within_cwd(cwd, &canonical)?;
 
     Ok(canonical)
 }
@@ -2527,13 +2539,7 @@ fn resolve_existing_path_within_cwd(cwd: &Path, raw_path: &str) -> Result<PathBu
 
     let canonical = fs::canonicalize(&candidate)
         .map_err(|error| format!("Failed to resolve {}: {error}", candidate.display()))?;
-    if !canonical.starts_with(cwd) {
-        return Err(format!(
-            "{} is outside the current working directory {}; native local-tools mode only supports cwd-contained paths",
-            canonical.display(),
-            cwd.display()
-        ));
-    }
+    ensure_within_cwd(cwd, &canonical)?;
 
     Ok(canonical)
 }
@@ -2552,13 +2558,7 @@ fn resolve_path_for_write(cwd: &Path, raw_path: &str) -> Result<(PathBuf, bool),
         let canonical = fs::canonicalize(&existing_ancestor).map_err(|error| {
             format!("Failed to resolve {}: {error}", existing_ancestor.display())
         })?;
-        if !canonical.starts_with(cwd) {
-            return Err(format!(
-                "{} is outside the current working directory {}; native local-tools mode only supports cwd-contained paths",
-                canonical.display(),
-                cwd.display()
-            ));
-        }
+        ensure_within_cwd(cwd, &canonical)?;
         return Ok((canonical, true));
     }
 
@@ -2571,13 +2571,7 @@ fn resolve_path_for_write(cwd: &Path, raw_path: &str) -> Result<(PathBuf, bool),
 
     let canonical_ancestor = fs::canonicalize(&existing_ancestor)
         .map_err(|error| format!("Failed to resolve {}: {error}", existing_ancestor.display()))?;
-    if !canonical_ancestor.starts_with(cwd) {
-        return Err(format!(
-            "{} is outside the current working directory {}; native local-tools mode only supports cwd-contained paths",
-            canonical_ancestor.display(),
-            cwd.display()
-        ));
-    }
+    ensure_within_cwd(cwd, &canonical_ancestor)?;
 
     let mut resolved = canonical_ancestor.clone();
     if !missing_tail.as_os_str().is_empty() {
@@ -2591,13 +2585,7 @@ fn resolve_path_for_write(cwd: &Path, raw_path: &str) -> Result<(PathBuf, bool),
             }
             let canonical = fs::canonicalize(&resolved)
                 .map_err(|error| format!("Failed to resolve {}: {error}", resolved.display()))?;
-            if !canonical.starts_with(cwd) {
-                return Err(format!(
-                    "{} is outside the current working directory {}; native local-tools mode only supports cwd-contained paths",
-                    canonical.display(),
-                    cwd.display()
-                ));
-            }
+            ensure_within_cwd(cwd, &canonical)?;
             Ok((canonical, true))
         }
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok((resolved, false)),
@@ -4337,6 +4325,34 @@ mod tests {
                 "type": "f"
             }),
             &root,
+        );
+
+        match output {
+            ToolExecution::Output(text) => {
+                assert!(text.contains("members = ["));
+            }
+            ToolExecution::FallbackToRustFullCli(reason) => {
+                panic!("grep unexpectedly requested fallback: {reason}");
+            }
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn grep_accepts_relative_file_paths_under_symlinked_cwd() {
+        let root = temp_dir("grep-symlink-target");
+        let alias_parent = temp_dir("grep-symlink-parent");
+        let alias = alias_parent.join("workspace-link");
+        std::os::unix::fs::symlink(&root, &alias).expect("create cwd symlink");
+        let file = root.join("sample.txt");
+        fs::write(&file, "alpha\nmembers = [\nomega\n").expect("write sample");
+
+        let output = execute_grep_tool(
+            &json!({
+                "pattern": "^members\\s*=",
+                "path": "sample.txt"
+            }),
+            &alias,
         );
 
         match output {
