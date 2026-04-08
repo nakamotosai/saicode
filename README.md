@@ -75,6 +75,7 @@ SAICODE_CLOSEOUT_LIVE=1 SAICODE_CLOSEOUT_ACCEPTANCE=1 ./scripts/closeout_preflig
 
 - 当前仓库默认展示模型仍是 `cpa/qwen/qwen3.5-122b-a10b`，这是配置口径，不等于每条运行时请求都必须直打 qwen
 - 若外部 provider 连 `gpt-5.4-mini` 也不可用，工具型和 one-shot 稳定性会退回到上游可用性问题，不在仓库内可单独消除
+- 剩余这条 provider/runtime/status 真相面收口计划见 `specs/saicode-nonfrontend-remaining-boundary-closeout-20260409/`
 - 本 README 只描述非前端真相；浏览器前端不在本轮收口范围内
 
 ## 清理原则

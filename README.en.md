@@ -75,4 +75,5 @@ SAICODE_CLOSEOUT_LIVE=1 SAICODE_CLOSEOUT_ACCEPTANCE=1 ./scripts/closeout_preflig
 
 - The repository still displays `cpa/qwen/qwen3.5-122b-a10b` as the default configured model; that does not mean every runtime path must call qwen directly
 - If the upstream provider also cannot serve `gpt-5.4-mini`, tool-capable and one-shot stability fall back to upstream availability limits
+- The remaining provider/runtime/status closeout plan is tracked in `specs/saicode-nonfrontend-remaining-boundary-closeout-20260409/`
 - This README documents the non-frontend surface only; browser frontend work is out of scope for this closeout
