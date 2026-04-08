@@ -165,8 +165,60 @@ run_rust_route_probe() {
   fi
 }
 
+ensure_release_binaries() {
+  if ! command -v cargo >/dev/null 2>&1; then
+    log "cargo not installed; skipping release binary checks"
+    return
+  fi
+
+  if [[ -x "$NATIVE_LAUNCHER" ]]; then
+    log "native launcher present: $NATIVE_LAUNCHER"
+  else
+    log "building native launcher for release-path smoke"
+    cargo build --release --manifest-path native/saicode-launcher/Cargo.toml >/dev/null
+  fi
+
+  if [[ -x "$RUST_FULL_CLI" ]]; then
+    log "rust full CLI present: $RUST_FULL_CLI"
+  elif [[ -x "$REPO_ROOT/scripts/rust-cargo.sh" ]]; then
+    log "building rust full CLI for route smoke"
+    (
+      cd "$REPO_ROOT/rust"
+      "$REPO_ROOT/scripts/rust-cargo.sh" build --release -q -p saicode-rust-cli >/dev/null
+    )
+  else
+    log "rust-cargo.sh not found; skipping rust full CLI build check"
+  fi
+
+  if [[ -x "$RUST_ONE_SHOT" ]]; then
+    log "rust one-shot present: $RUST_ONE_SHOT"
+  elif [[ -x "$REPO_ROOT/scripts/rust-cargo.sh" ]]; then
+    log "building rust one-shot for route smoke"
+    (
+      cd "$REPO_ROOT/rust"
+      "$REPO_ROOT/scripts/rust-cargo.sh" build --release -q -p saicode-rust-one-shot >/dev/null
+    )
+  else
+    log "rust-cargo.sh not found; skipping rust one-shot build check"
+  fi
+
+  if [[ -x "$RUST_LOCAL_TOOLS" ]]; then
+    log "rust local-tools present: $RUST_LOCAL_TOOLS"
+  elif [[ -x "$REPO_ROOT/scripts/rust-cargo.sh" ]]; then
+    log "building rust local-tools for local-tools smoke"
+    (
+      cd "$REPO_ROOT/rust"
+      "$REPO_ROOT/scripts/rust-cargo.sh" build --release -q -p saicode-rust-local-tools >/dev/null
+    )
+  else
+    log "rust-cargo.sh not found; skipping rust local-tools build check"
+  fi
+}
+
 main() {
   cd "$REPO_ROOT"
+
+  ensure_release_binaries
 
   run_help_smoke "repo wrapper help" ./bin/saicode --help
   run_help_smoke "rust full CLI help with native launcher disabled" env SAICODE_DISABLE_NATIVE_LAUNCHER=1 ./bin/saicode --help
@@ -191,44 +243,6 @@ main() {
     )
   else
     log "installed command not found at $INSTALLED_COMMAND; skipping installed-command smoke"
-  fi
-
-  if command -v cargo >/dev/null 2>&1; then
-    if [[ -x "$NATIVE_LAUNCHER" ]]; then
-      log "native launcher present: $NATIVE_LAUNCHER"
-    else
-      log "building native launcher for release-path smoke"
-      cargo build --release --manifest-path native/saicode-launcher/Cargo.toml >/dev/null
-    fi
-    if [[ -x "$RUST_FULL_CLI" ]]; then
-      log "rust full CLI present: $RUST_FULL_CLI"
-    elif [[ -x "$REPO_ROOT/scripts/rust-cargo.sh" ]]; then
-      log "building rust full CLI for route smoke"
-      (
-        cd "$REPO_ROOT/rust"
-        "$REPO_ROOT/scripts/rust-cargo.sh" build --release -q -p saicode-rust-cli >/dev/null
-      )
-    else
-      log "rust-cargo.sh not found; skipping rust full CLI build check"
-    fi
-    if [[ -x "$RUST_ONE_SHOT" ]]; then
-      log "rust one-shot present: $RUST_ONE_SHOT"
-    else
-      log "rust one-shot optional for now; skipping dedicated build check"
-    fi
-    if [[ -x "$RUST_LOCAL_TOOLS" ]]; then
-      log "rust local-tools present: $RUST_LOCAL_TOOLS"
-    elif [[ -x "$REPO_ROOT/scripts/rust-cargo.sh" ]]; then
-      log "building rust local-tools for local-tools smoke"
-      (
-        cd "$REPO_ROOT/rust"
-        "$REPO_ROOT/scripts/rust-cargo.sh" build --release -q -p saicode-rust-local-tools >/dev/null
-      )
-    else
-      log "rust-cargo.sh not found; skipping rust local-tools build check"
-    fi
-  else
-    log "cargo not installed; skipping native release build check"
   fi
 
   run_help_smoke "repo wrapper full CLI rust route" "$REPO_ROOT/bin/saicode" status
