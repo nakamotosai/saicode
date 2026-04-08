@@ -1,7 +1,4 @@
-mod local_tools;
-mod recovery;
-mod warm_headless;
-
+use saicode_frontline::{local_tools, recovery};
 use std::env;
 use std::path::{Path, PathBuf};
 use std::process::{self, Command};
@@ -27,6 +24,28 @@ const LIGHTWEIGHT_HEADLESS_TOOL_NAMES: &[&str] = &[
     "WebFetch",
     "WebSearch",
 ];
+const EXPLICIT_TOOL_HINT_NAMES: &[&str] = &[
+    "Read",
+    "Bash",
+    "Write",
+    "Edit",
+    "Glob",
+    "Grep",
+    "Skill",
+    "LSP",
+    "WebFetch",
+    "WebSearch",
+    "TaskCreate",
+    "TaskList",
+    "TaskGet",
+    "TaskStop",
+    "TaskUpdate",
+    "TaskOutput",
+    "MCP",
+    "ListMcpResources",
+    "ReadMcpResource",
+    "McpAuth",
+];
 
 const FAST_HELP_TEXT: &str = r#"Usage: saicode [options] [command] [prompt]
 
@@ -39,54 +58,35 @@ Arguments:
 Options:
   --add-dir <directories...>                        Additional directories to allow tool access to
   --agent <agent>                                   Agent for the current session. Overrides the 'agent' setting.
-  --agents <json>                                   JSON object defining custom agents (e.g. '{"reviewer": {"description": "Reviews code", "prompt": "You are a code reviewer"}}')
-  --allow-dangerously-skip-permissions              Allow Full Access to appear as a selectable option without enabling it by default. Recommended only for sandboxes with no internet access.
+  --agents <json>                                   JSON object defining custom agents
+  --allow-dangerously-skip-permissions              Allow Full Access to appear as a selectable option without enabling it by default
   --allowedTools, --allowed-tools <tools...>        Comma or space-separated list of tool names to allow
   --append-system-prompt <prompt>                   Append a system prompt to the default system prompt
-  --bare                                            Minimal mode: skip hooks, LSP, plugin sync, attribution, auto-memory, background prefetches, keychain reads, and SAICODE.md auto-discovery.
-  --betas <betas...>                                Beta headers to include in API requests (API key users only)
+  --bare                                            Minimal mode
   -c, --continue                                    Continue the most recent conversation in the current directory
   --dangerously-skip-permissions                    Enable Full Access mode
-  -d, --debug [filter]                              Enable debug mode with optional category filtering
-  --disallowedTools, --disallowed-tools <tools...>  Comma or space-separated list of tool names to deny
   --effort <level>                                  Effort level for the current session
-  --fallback-model <model>                          Enable fallback model for --print
-  --file <specs...>                                 File resources to download at startup
-  --fork-session                                    When resuming, create a new session ID instead of reusing the original
-  --from-pr [value]                                 Resume a session linked to a PR by PR number/URL
   -h, --help                                        Display help for command
-  --ide                                             Automatically connect to IDE on startup if exactly one valid IDE is available
-  --include-hook-events                             Include all hook lifecycle events in the output stream
-  --include-partial-messages                        Include partial chunks for print streaming
-  --input-format <format>                           Input format for --print
-  --json-schema <schema>                            JSON Schema for structured output validation
-  --max-budget-usd <amount>                         Maximum API budget for --print
   --mcp-config <configs...>                         Load MCP servers from JSON files or strings
-  --mcp-debug                                       [DEPRECATED. Use --debug instead] Enable MCP debug mode
   --model <model>                                   Model for the current session
-  -n, --name <name>                                 Set a display name for this session
-  --no-session-persistence                          Disable session persistence for --print
-  --output-format <format>                          Output format for --print
+  --no-session-persistence                          Disable session persistence
+  --output-format <format>                          Output format for --print (text|json|stream-json)
   --permission-mode <mode>                          Permission mode for the session
-  --plugin-dir <path>                               Load plugins from a directory for this session only
   -p, --print                                       Print response and exit
-  --replay-user-messages                            Re-emit stdin user messages on stdout for acknowledgment
-  -r, --resume [value]                              Resume a conversation by session ID or picker
-  --session-id <uuid>                               Use a specific session ID
-  --setting-sources <sources>                       Comma-separated list of setting sources to load
-  --settings <file-or-json>                         Load additional settings
-  --strict-mcp-config                               Only use MCP servers from --mcp-config
+  -r, --resume [value]                              Resume a conversation by session path or latest
   --system-prompt <prompt>                          System prompt override
-  --tmux                                            Create a tmux session for the worktree
-  --tools <tools...>                                Specify built-in tools to expose
-  --verbose                                         Override verbose mode setting from config
   -v, --version                                     Output the version number
-  -w, --worktree [name]                             Create a new git worktree for this session
 
 Commands:
   agents [options]                                  List configured agents
+  config [show ...]                                 Inspect discovered config files
+  doctor                                            Diagnose setup, profile, and environment health
   mcp                                               Configure and manage MCP servers
   plugin|plugins                                    Manage saicode plugins
+  profile [list|show [name]]                        Inspect provider profiles
+  sandbox                                           Show sandbox status
+  skills [list|install <path>|help]                 List or install skills
+  status                                            Show current model/profile/workspace status
 "#;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -111,15 +111,6 @@ impl Route {
         }
     }
 
-    fn entrypoint(self) -> Option<&'static str> {
-        match self {
-            Route::Help | Route::Version => None,
-            Route::Recovery => Some("src/localRecoveryCli.ts"),
-            Route::NativeLocalTools => Some("src/entrypoints/headlessPrint.ts"),
-            Route::LightweightHeadless => Some("src/entrypoints/headlessPrint.ts"),
-            Route::FullCli => Some("src/entrypoints/cli.tsx"),
-        }
-    }
 }
 
 fn is_env_truthy(value: Option<&str>) -> bool {
@@ -226,6 +217,7 @@ fn should_use_recovery_entrypoint(cli_args: &[String]) -> bool {
     while index < cli_args.len() {
         let arg = cli_args[index].as_str();
         match arg {
+            "--" => break,
             "-p" | "--print" | "--bare" | "--dangerously-skip-permissions" | "-h" | "--help"
             | "-v" | "-V" | "--version" => {}
             "--model" | "--system-prompt" | "--system-prompt-file" | "--append-system-prompt" => {
@@ -264,7 +256,69 @@ fn should_use_recovery_entrypoint(cli_args: &[String]) -> bool {
         index += 1;
     }
 
+    if prompt_explicitly_requests_tool(&extract_print_prompt_text(cli_args)) {
+        return false;
+    }
+
     true
+}
+
+fn extract_print_prompt_text(cli_args: &[String]) -> String {
+    let mut parts = Vec::new();
+    let mut index = 0;
+    while index < cli_args.len() {
+        let arg = cli_args[index].as_str();
+        match arg {
+            "--" => {
+                parts.extend(cli_args[index + 1..].iter().cloned());
+                break;
+            }
+            "--model"
+            | "--system-prompt"
+            | "--system-prompt-file"
+            | "--append-system-prompt"
+            | "--append-system-prompt-file"
+            | "--output-format"
+            | "--permission-mode" => {
+                index += 1;
+            }
+            value if value.starts_with('-') => {}
+            value => parts.push(value.to_string()),
+        }
+        index += 1;
+    }
+    parts.join(" ")
+}
+
+fn normalize_tool_hint_text(value: &str) -> String {
+    let collapsed = value
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() {
+                ch.to_ascii_lowercase()
+            } else {
+                ' '
+            }
+        })
+        .collect::<String>();
+    format!(" {} ", collapsed.split_whitespace().collect::<Vec<_>>().join(" "))
+}
+
+fn prompt_explicitly_requests_tool(prompt: &str) -> bool {
+    let normalized_prompt = normalize_tool_hint_text(prompt);
+    EXPLICIT_TOOL_HINT_NAMES.iter().any(|tool| {
+        let tool = tool.to_ascii_lowercase();
+        [
+            format!(" use {tool} "),
+            format!(" using {tool} "),
+            format!(" call {tool} "),
+            format!(" run {tool} "),
+            format!(" with {tool} "),
+            format!(" via {tool} "),
+        ]
+        .iter()
+        .any(|needle| normalized_prompt.contains(needle))
+    })
 }
 
 fn is_restricted_tool_print_candidate(
@@ -286,6 +340,7 @@ fn is_restricted_tool_print_candidate(
     while index < cli_args.len() {
         let arg = cli_args[index].as_str();
         match arg {
+            "--" => break,
             "-p" | "--print" | "--bare" | "--dangerously-skip-permissions"
             | "--allow-dangerously-skip-permissions" => {}
             "-h" | "--help" | "-v" | "-V" | "--version" => return false,
@@ -354,12 +409,15 @@ fn is_restricted_tool_print_candidate(
 }
 
 fn should_use_lightweight_headless_print_entrypoint(cli_args: &[String]) -> bool {
+    if cli_args.iter().any(|arg| arg == "--bare") {
+        return false;
+    }
     is_restricted_tool_print_candidate(cli_args, uses_only_lightweight_headless_tools)
 }
 
 fn should_use_native_local_tools_entrypoint(cli_args: &[String]) -> bool {
     let is_print_mode = cli_args.iter().any(|arg| arg == "-p" || arg == "--print");
-    if !is_print_mode {
+    if !is_print_mode || cli_args.iter().any(|arg| arg == "--bare") {
         return false;
     }
 
@@ -369,6 +427,7 @@ fn should_use_native_local_tools_entrypoint(cli_args: &[String]) -> bool {
     while index < cli_args.len() {
         let arg = cli_args[index].as_str();
         match arg {
+            "--" => break,
             "-p" | "--print" | "--bare" | "--dangerously-skip-permissions"
             | "--allow-dangerously-skip-permissions" => {}
             "-h" | "--help" | "-v" | "-V" | "--version" => return false,
@@ -438,7 +497,9 @@ fn determine_route(args: &[String]) -> Route {
 }
 
 fn looks_like_repo_root(path: &Path) -> bool {
-    path.join("package.json").is_file() && path.join("src/entrypoints/router.ts").is_file()
+    path.join("bin/saicode").is_file()
+        && path.join("native/saicode-launcher/Cargo.toml").is_file()
+        && path.join("rust/Cargo.toml").is_file()
 }
 
 fn find_repo_root() -> Result<PathBuf, String> {
@@ -509,74 +570,153 @@ fn maybe_print_dry_run(route: Route, target: Option<&Path>) -> bool {
     true
 }
 
-fn trace_virtual_target(route: Route, target: &str) {
-    if !is_env_truthy(env::var("SAICODE_NATIVE_TRACE").ok().as_deref()) {
-        return;
+fn rust_one_shot_binary(repo_root: &Path) -> Option<PathBuf> {
+    if is_env_truthy(env::var("SAICODE_DISABLE_RUST_ONE_SHOT").ok().as_deref()) {
+        return None;
     }
 
-    eprintln!("saicode-native route={} target={target}", route.label());
+    let binary = env::var("SAICODE_RUST_ONE_SHOT_BIN")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| repo_root.join("rust/target/release/saicode-rust-one-shot"));
+
+    binary.is_file().then_some(binary)
 }
 
-fn maybe_print_virtual_dry_run(route: Route, target: &str) -> bool {
-    if !is_env_truthy(env::var("SAICODE_NATIVE_DRY_RUN").ok().as_deref()) {
-        return false;
+fn rust_local_tools_binary(repo_root: &Path) -> Option<PathBuf> {
+    if is_env_truthy(env::var("SAICODE_DISABLE_RUST_LOCAL_TOOLS").ok().as_deref()) {
+        return None;
     }
 
-    println!("route={} target={target}", route.label());
-    true
+    let binary = env::var("SAICODE_RUST_LOCAL_TOOLS_BIN")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| repo_root.join("rust/target/release/saicode-rust-local-tools"));
+
+    binary.is_file().then_some(binary)
 }
 
-fn hand_off_to_bun(route: Route, repo_root: &Path, args: &[String]) -> Result<(), String> {
-    let relative_target = route
-        .entrypoint()
-        .ok_or_else(|| "Route has no Bun entrypoint".to_string())?;
-    let target = repo_root.join(relative_target);
-    let preload = repo_root.join("preload.ts");
-
-    if !target.is_file() {
-        return Err(format!(
-            "Native launcher target not found for route {}: {}",
-            route.label(),
-            target.display()
-        ));
+fn rust_full_cli_binary(repo_root: &Path) -> Option<PathBuf> {
+    if is_env_truthy(env::var("SAICODE_DISABLE_RUST_FULL_CLI").ok().as_deref()) {
+        return None;
     }
 
-    if !preload.is_file() {
-        return Err(format!(
-            "Native launcher preload not found for route {}: {}",
-            route.label(),
-            preload.display()
-        ));
-    }
+    let binary = env::var("SAICODE_RUST_FULL_CLI_BIN")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| repo_root.join("rust/target/release/saicode-rust-cli"));
 
-    trace_route(route, Some(&target));
-    if maybe_print_dry_run(route, Some(&target)) {
+    binary.is_file().then_some(binary)
+}
+
+fn rust_full_cli_target(repo_root: &Path) -> Result<PathBuf, String> {
+    rust_full_cli_binary(repo_root).ok_or_else(|| {
+        format!(
+            "Rust full CLI binary not found: {}",
+            repo_root.join("rust/target/release/saicode-rust-cli").display()
+        )
+    })
+}
+
+fn run_external_binary(route: Route, target: &Path, args: &[String]) -> Result<(), String> {
+    trace_route(route, Some(target));
+    if maybe_print_dry_run(route, Some(target)) {
         return Ok(());
     }
 
-    let bun = env::var("SAICODE_BUN_BIN").unwrap_or_else(|_| "bun".to_string());
-    let mut command = Command::new(bun);
-    command.arg("--preload");
-    command.arg(&preload);
-    command.arg(&target);
-    command.args(args);
-    command.env("SAICODE_NATIVE_LAUNCHER", "1");
-    command.env("SAICODE_ROUTED_ENTRYPOINT", route.label());
+    let status = Command::new(target)
+        .args(args)
+        .env("SAICODE_NATIVE_LAUNCHER", "1")
+        .status()
+        .map_err(|error| format!("Failed to spawn {}: {error}", target.display()))?;
 
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::CommandExt;
-        let error = command.exec();
-        Err(format!("Failed to exec Bun for {}: {error}", target.display()))
+    process::exit(status.code().unwrap_or(1));
+}
+
+enum RustLocalToolsBinaryOutcome {
+    Completed,
+    FallbackToFullCli(String),
+}
+
+enum RustOneShotOutcome {
+    Completed,
+    FallbackToNativeRecovery(String),
+}
+
+fn run_rust_local_tools_binary(
+    route: Route,
+    target: &Path,
+    args: &[String],
+) -> Result<RustLocalToolsBinaryOutcome, String> {
+    trace_route(route, Some(target));
+    if maybe_print_dry_run(route, Some(target)) {
+        return Ok(RustLocalToolsBinaryOutcome::Completed);
     }
 
-    #[cfg(not(unix))]
-    {
-        let status = command
-            .status()
-            .map_err(|error| format!("Failed to spawn Bun for {}: {error}", target.display()))?;
-        process::exit(status.code().unwrap_or(1));
+    let output = Command::new(target)
+        .args(args)
+        .env("SAICODE_NATIVE_LAUNCHER", "1")
+        .output()
+        .map_err(|error| format!("Failed to spawn {}: {error}", target.display()))?;
+
+    if !output.stdout.is_empty() {
+        print!("{}", String::from_utf8_lossy(&output.stdout));
     }
+    if !output.stderr.is_empty() {
+        eprint!("{}", String::from_utf8_lossy(&output.stderr));
+    }
+
+    match output.status.code() {
+        Some(0) => Ok(RustLocalToolsBinaryOutcome::Completed),
+        Some(90) => Ok(RustLocalToolsBinaryOutcome::FallbackToFullCli(
+            String::from_utf8_lossy(&output.stderr).trim().to_string(),
+        )),
+        Some(91) => Err(format!(
+            "{} reported it cannot handle this invocation natively",
+            target.display()
+        )),
+        Some(code) => Err(format!("{} exited with status code {code}", target.display())),
+        None => Err(format!("{} exited due to signal", target.display())),
+    }
+}
+
+fn run_via_rust_full_cli(route: Route, repo_root: &Path, args: &[String]) -> Result<(), String> {
+    let target = rust_full_cli_target(repo_root)?;
+    run_external_binary(route, &target, args)
+}
+
+fn run_rust_one_shot_binary(
+    route: Route,
+    target: &Path,
+    args: &[String],
+) -> Result<RustOneShotOutcome, String> {
+    trace_route(route, Some(target));
+    if maybe_print_dry_run(route, Some(target)) {
+        return Ok(RustOneShotOutcome::Completed);
+    }
+
+    let output = Command::new(target)
+        .args(args)
+        .env("SAICODE_NATIVE_LAUNCHER", "1")
+        .output()
+        .map_err(|error| format!("Failed to spawn {}: {error}", target.display()))?;
+
+    if output.status.success() {
+        if !output.stdout.is_empty() {
+            print!("{}", String::from_utf8_lossy(&output.stdout));
+        }
+        if !output.stderr.is_empty() {
+            eprint!("{}", String::from_utf8_lossy(&output.stderr));
+        }
+        return Ok(RustOneShotOutcome::Completed);
+    }
+
+    let mut reason = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    if reason.is_empty() {
+        reason = match output.status.code() {
+            Some(code) => format!("{} exited with status code {code}", target.display()),
+            None => format!("{} exited due to signal", target.display()),
+        };
+    }
+
+    Ok(RustOneShotOutcome::FallbackToNativeRecovery(reason))
 }
 
 fn main() {
@@ -605,6 +745,26 @@ fn main() {
                 }
             };
 
+            if let Some(target) = rust_one_shot_binary(&repo_root) {
+                match run_rust_one_shot_binary(route, &target, &args) {
+                    Ok(RustOneShotOutcome::Completed) => return,
+                    Ok(RustOneShotOutcome::FallbackToNativeRecovery(reason)) => {
+                        if is_env_truthy(env::var("SAICODE_NATIVE_TRACE").ok().as_deref()) {
+                            eprintln!(
+                                "saicode-native rust-one-shot fallback_to=native-recovery reason={reason}"
+                            );
+                        }
+                    }
+                    Err(message) => {
+                        if is_env_truthy(env::var("SAICODE_NATIVE_TRACE").ok().as_deref()) {
+                            eprintln!(
+                                "saicode-native rust-one-shot fallback_to=native-recovery reason={message}"
+                            );
+                        }
+                    }
+                }
+            }
+
             if recovery::should_handle_natively(&args) {
                 trace_route(route, None);
                 if is_env_truthy(env::var("SAICODE_NATIVE_DRY_RUN").ok().as_deref()) {
@@ -618,7 +778,7 @@ fn main() {
                 return;
             }
 
-            if let Err(message) = hand_off_to_bun(route, &repo_root, &args) {
+            if let Err(message) = run_via_rust_full_cli(route, &repo_root, &args) {
                 eprintln!("{message}");
                 process::exit(1);
             }
@@ -632,20 +792,15 @@ fn main() {
                 }
             };
 
-            if local_tools::should_handle_natively(&args) {
-                trace_route(route, None);
-                if is_env_truthy(env::var("SAICODE_NATIVE_DRY_RUN").ok().as_deref()) {
-                    println!("route={} target=native-local-tools", route.label());
-                    return;
-                }
-                match local_tools::run_native_local_tools(&args) {
-                    Ok(local_tools::NativeLocalToolsOutcome::Completed) => return,
-                    Ok(local_tools::NativeLocalToolsOutcome::FallbackToBun(_reason)) => {
-                        if let Err(message) = hand_off_to_bun(route, &repo_root, &args) {
-                            eprintln!("{message}");
-                            process::exit(1);
+            if let Some(target) = rust_local_tools_binary(&repo_root) {
+                match run_rust_local_tools_binary(route, &target, &args) {
+                    Ok(RustLocalToolsBinaryOutcome::Completed) => return,
+                    Ok(RustLocalToolsBinaryOutcome::FallbackToFullCli(reason)) => {
+                        if is_env_truthy(env::var("SAICODE_NATIVE_TRACE").ok().as_deref()) {
+                            eprintln!(
+                                "saicode-native rust-local-tools fallback_to=rust-full-cli reason={reason}"
+                            );
                         }
-                        return;
                     }
                     Err(message) => {
                         eprintln!("{message}");
@@ -654,7 +809,29 @@ fn main() {
                 }
             }
 
-            if let Err(message) = hand_off_to_bun(route, &repo_root, &args) {
+            if local_tools::should_handle_natively(&args) {
+                trace_route(route, None);
+                if is_env_truthy(env::var("SAICODE_NATIVE_DRY_RUN").ok().as_deref()) {
+                    println!("route={} target=native-local-tools", route.label());
+                    return;
+                }
+                match local_tools::run_native_local_tools(&args) {
+                    Ok(local_tools::NativeLocalToolsOutcome::Completed) => return,
+                    Ok(local_tools::NativeLocalToolsOutcome::FallbackToRustFullCli(reason)) => {
+                        if is_env_truthy(env::var("SAICODE_NATIVE_TRACE").ok().as_deref()) {
+                            eprintln!(
+                                "saicode-native native-local-tools fallback_to=rust-full-cli reason={reason}"
+                            );
+                        }
+                    }
+                    Err(message) => {
+                        eprintln!("{message}");
+                        process::exit(1);
+                    }
+                }
+            }
+
+            if let Err(message) = run_via_rust_full_cli(route, &repo_root, &args) {
                 eprintln!("{message}");
                 process::exit(1);
             }
@@ -668,28 +845,7 @@ fn main() {
                 }
             };
 
-            if warm_headless::should_attempt_warm_headless(&args) {
-                trace_virtual_target(route, "warm-headless-worker");
-                if maybe_print_virtual_dry_run(route, "warm-headless-worker") {
-                    return;
-                }
-
-                match warm_headless::run_via_warm_headless(&repo_root, &args) {
-                    Ok(warm_headless::WarmHeadlessOutcome::Handled(exit_code)) => {
-                        process::exit(exit_code);
-                    }
-                    Ok(warm_headless::WarmHeadlessOutcome::Fallback(reason)) => {
-                        if is_env_truthy(env::var("SAICODE_NATIVE_TRACE").ok().as_deref()) {
-                            eprintln!("saicode-native warm-headless main_fallback_reason={reason}");
-                        }
-                    }
-                    Err(message) => {
-                        eprintln!("{message}");
-                    }
-                }
-            }
-
-            if let Err(message) = hand_off_to_bun(route, &repo_root, &args) {
+            if let Err(message) = run_via_rust_full_cli(route, &repo_root, &args) {
                 eprintln!("{message}");
                 process::exit(1);
             }
@@ -702,10 +858,18 @@ fn main() {
                     process::exit(1);
                 }
             };
-            if let Err(message) = hand_off_to_bun(route, &repo_root, &args) {
-                eprintln!("{message}");
-                process::exit(1);
+            if let Some(target) = rust_full_cli_binary(&repo_root) {
+                if let Err(message) = run_external_binary(route, &target, &args) {
+                    eprintln!("{message}");
+                    process::exit(1);
+                }
+                return;
             }
+            eprintln!(
+                "Rust full CLI binary not found: {}",
+                repo_root.join("rust/target/release/saicode-rust-cli").display()
+            );
+            process::exit(1);
         }
     }
 }
@@ -755,6 +919,14 @@ mod tests {
             "hello",
         ])));
         assert!(!should_use_recovery_entrypoint(&args(&["-p", "--tools", "Read", "hello"])));
+        assert!(!should_use_recovery_entrypoint(&args(&[
+            "-p",
+            "Use",
+            "Read",
+            "to",
+            "inspect",
+            "package.json",
+        ])));
     }
 
     #[test]
@@ -824,6 +996,10 @@ mod tests {
             Route::NativeLocalTools
         );
         assert_eq!(
+            determine_route(&args(&["-p", "--bare", "hello", "--allowedTools", "Read"])),
+            Route::FullCli
+        );
+        assert_eq!(
             determine_route(&args(&["-p", "hello", "--allowedTools", "Bash"])),
             Route::NativeLocalTools
         );
@@ -860,6 +1036,11 @@ mod tests {
         assert_eq!(
             determine_route(&args(&["-p", "hello", "--resume", "session-id"])),
             Route::FullCli
+        );
+        assert_eq!(determine_route(&args(&["-p", "--", "hello"])), Route::Recovery);
+        assert_eq!(
+            determine_route(&args(&["-p", "--allowedTools", "Read", "--", "hello"])),
+            Route::NativeLocalTools
         );
     }
 }

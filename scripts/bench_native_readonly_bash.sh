@@ -20,4 +20,4 @@ run_case() {
 }
 
 run_case 'native readonly bash' env
-run_case 'bun lightweight fallback' env SAICODE_DISABLE_NATIVE_LOCAL_TOOLS=1
+run_case 'rust full CLI fallback' env SAICODE_DISABLE_NATIVE_LOCAL_TOOLS=1

@@ -18,25 +18,6 @@ require_cmd() {
   fi
 }
 
-install_bun() {
-  if command -v bun >/dev/null 2>&1; then
-    log "bun already installed: $(command -v bun)"
-    return
-  fi
-
-  require_cmd curl
-  log "installing bun"
-  curl -fsSL https://bun.sh/install | bash
-
-  export BUN_INSTALL="${BUN_INSTALL:-$HOME/.bun}"
-  export PATH="$BUN_INSTALL/bin:$PATH"
-
-  if ! command -v bun >/dev/null 2>&1; then
-    echo "bun install completed but bun is not on PATH yet; reopen the shell and rerun" >&2
-    exit 1
-  fi
-}
-
 sync_repo() {
   require_cmd git
 
@@ -51,11 +32,6 @@ sync_repo() {
   fi
 }
 
-install_deps() {
-  log "installing dependencies"
-  (cd "$INSTALL_DIR" && bun install --frozen-lockfile)
-}
-
 build_native_launcher() {
   if ! command -v cargo >/dev/null 2>&1; then
     log "skip native launcher build: cargo not installed"
@@ -66,6 +42,21 @@ build_native_launcher() {
   (
     cd "$INSTALL_DIR"
     cargo build --release --manifest-path native/saicode-launcher/Cargo.toml
+  )
+}
+
+build_rust_one_shot() {
+  if [[ ! -x "$INSTALL_DIR/scripts/rust-cargo.sh" ]]; then
+    log "skip rust one-shot build: rust-cargo.sh not found"
+    return
+  fi
+
+  log "building rust CLI binaries"
+  (
+    cd "$INSTALL_DIR/rust"
+    "$INSTALL_DIR/scripts/rust-cargo.sh" build --release -q -p saicode-rust-cli
+    "$INSTALL_DIR/scripts/rust-cargo.sh" build --release -q -p saicode-rust-one-shot
+    "$INSTALL_DIR/scripts/rust-cargo.sh" build --release -q -p saicode-rust-local-tools
   )
 }
 
@@ -110,13 +101,13 @@ bootstrap_runtime_config() {
   jq '{
     providers: {
       cpa: {
-        api: (.models.providers.cliproxyapi.api // "openai-responses"),
+        api: (.models.providers.cliproxyapi.api // "openai-chat-completions"),
         baseUrl: .models.providers.cliproxyapi.baseUrl,
         apiKey: .models.providers.cliproxyapi.apiKey,
         headers: (.models.providers.cliproxyapi.headers // null)
       },
       cliproxyapi: {
-        api: (.models.providers.cliproxyapi.api // "openai-responses"),
+        api: (.models.providers.cliproxyapi.api // "openai-chat-completions"),
         baseUrl: .models.providers.cliproxyapi.baseUrl,
         apiKey: .models.providers.cliproxyapi.apiKey,
         headers: (.models.providers.cliproxyapi.headers // null)
@@ -173,10 +164,9 @@ EOF
 }
 
 main() {
-  install_bun
   sync_repo
-  install_deps
   build_native_launcher
+  build_rust_one_shot
   ensure_env_file
   bootstrap_runtime_config
   create_link

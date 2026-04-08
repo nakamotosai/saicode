@@ -20,4 +20,4 @@ run_case() {
 }
 
 run_case 'native recovery' env
-run_case 'bun recovery fallback' env SAICODE_DISABLE_NATIVE_RECOVERY=1
+run_case 'rust full CLI fallback' env SAICODE_DISABLE_NATIVE_RECOVERY=1

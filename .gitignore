@@ -2,6 +2,7 @@
 .env.*
 !.env.example
 node_modules
+frontend/node_modules
 projects/
 sessions/
 shell-snapshots/
@@ -15,3 +16,7 @@ tmp_*.json
 .tmp-native-probes/
 *.tsbuildinfo
 native/*/target/
+rust/target/
+.omx/
+.tmp_acceptance/
+\$TMP_DIR/

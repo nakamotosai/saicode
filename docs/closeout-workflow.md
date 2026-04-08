@@ -13,20 +13,19 @@ saicode --help
 SAICODE_DISABLE_NATIVE_LAUNCHER=1 saicode mcp --help
 ```
 
-如果 `saicode` 是通过软链安装的，还要确认软链入口不是把仓库根目录误判成 `~/.local`，并且 full CLI fallback 不会因为缺少 preload 而在 `main.tsx` 里炸 `MACRO is not defined`。
+如果 `saicode` 是通过软链安装的，还要确认软链入口不是把仓库根目录误判成 `~/.local`，并且 full CLI fallback 不会因为缺少旧前端文件而失效。
 
 ## 2. 本地收尾预检
 
 先跑自动化收尾预检：
 
 ```bash
-bun run closeout:preflight
+./scripts/closeout_preflight.sh
 ```
 
 这一步会检查：
 
 - repo wrapper 可用
-- Bun fallback 可用
 - full CLI fallback 可用
 - symlink 入口可用
 - 已安装命令入口可用
@@ -37,7 +36,7 @@ bun run closeout:preflight
 在当前机器已经配好 `~/.saicode/config.json` 时，再跑真实请求：
 
 ```bash
-bun run closeout:live
+SAICODE_CLOSEOUT_LIVE=1 ./scripts/closeout_preflight.sh
 ```
 
 这一步要求 `saicode -p "Reply with exactly: ok"` 真正返回 `ok`。
@@ -59,9 +58,10 @@ bun run closeout:live
 ```bash
 git status --short
 git diff --check
-bun run verify
-bun run closeout:preflight
-bun run closeout:live
+cargo test --manifest-path native/saicode-launcher/Cargo.toml
+(cd rust && ../scripts/rust-cargo.sh test -q -p api -p runtime -p commands -p tools -p saicode-frontline -p saicode-rust-cli -p saicode-rust-one-shot -p saicode-rust-local-tools)
+./scripts/closeout_preflight.sh
+SAICODE_CLOSEOUT_LIVE=1 ./scripts/closeout_preflight.sh
 git add <本轮文件>
 git commit -m "fix: restore saicode installed entry and add closeout workflow"
 git push origin <current-branch>

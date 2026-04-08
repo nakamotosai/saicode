@@ -1,0 +1,16 @@
+[package]
+name = "saicode-rust-local-tools"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "saicode-rust-local-tools"
+path = "src/main.rs"
+
+[dependencies]
+saicode-frontline = { path = "../saicode-frontline" }
+
+[lints]
+workspace = true

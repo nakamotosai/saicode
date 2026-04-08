@@ -23,12 +23,19 @@ SCRIPT_PATH="$(resolve_script_path "${BASH_SOURCE[0]}")"
 SCRIPT_DIR="$(cd -P "$(dirname "$SCRIPT_PATH")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 NATIVE_LAUNCHER="$REPO_ROOT/native/saicode-launcher/target/release/saicode-launcher"
-PRELOAD_SCRIPT="$REPO_ROOT/preload.ts"
+RUST_FULL_CLI="$REPO_ROOT/rust/target/release/saicode-rust-cli"
 
 if [[ "${SAICODE_DISABLE_NATIVE_LAUNCHER:-}" != "1" && -x "$NATIVE_LAUNCHER" ]]; then
   export SAICODE_REPO_ROOT="$REPO_ROOT"
   exec "$NATIVE_LAUNCHER" "$@"
 fi
 
-export SAICODE_REPO_ROOT="$REPO_ROOT"
-exec bun --preload "$PRELOAD_SCRIPT" "$REPO_ROOT/bin/saicode-bun" "$@"
+if [[ "${SAICODE_DISABLE_RUST_FULL_CLI:-}" != "1" && -x "$RUST_FULL_CLI" ]]; then
+  export SAICODE_REPO_ROOT="$REPO_ROOT"
+  exec "$RUST_FULL_CLI" "$@"
+fi
+
+printf '%s\n' "saicode runtime not found; expected Rust native launcher or Rust full CLI under $REPO_ROOT" >&2
+printf '%s\n' "Build with: cargo build --release --manifest-path native/saicode-launcher/Cargo.toml" >&2
+printf '%s\n' "or: (cd $REPO_ROOT/rust && ../scripts/rust-cargo.sh build --release -p saicode-rust-cli)" >&2
+exit 1
