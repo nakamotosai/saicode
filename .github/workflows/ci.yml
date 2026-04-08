@@ -7,9 +7,21 @@ on:
 jobs:
   verify:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
-      - run: bun install --frozen-lockfile
-      - run: bun run verify
-      - run: bun run closeout:preflight
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.94.1
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            rust
+            native/saicode-launcher
+      - name: Verify native launcher tests
+        run: cargo test --manifest-path native/saicode-launcher/Cargo.toml
+      - name: Verify Rust workspace tests
+        working-directory: rust
+        run: ../scripts/rust-cargo.sh test -q -p api -p runtime -p commands -p tools -p saicode-frontline -p saicode-rust-cli -p saicode-rust-one-shot -p saicode-rust-local-tools
+      - name: Verify offline closeout preflight
+        run: ./scripts/closeout_preflight.sh
