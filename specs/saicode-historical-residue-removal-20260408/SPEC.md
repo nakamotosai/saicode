@@ -1,16 +1,16 @@
-# Saicode Sessiond Residue Removal
+# Saicode Historical Residue Removal
 
 ## Goal
 
-彻底移除 `saicode-rust-sessiond` 与对应桥接残留，使 `saicode` 只保留一个真实用户入口 `./bin/saicode`，并把当前仓库从“巨大 cutover 脏工作树”收敛到可提交、可验证、`git status` 干净的状态。
+彻底移除历史第二入口、已废弃会话守护实现与对应桥接残留，使 `saicode` 只保留一个真实用户入口 `./bin/saicode`，并把当前仓库从“巨大 cutover 脏工作树”收敛到可提交、可验证、`git status` 干净的状态。
 
 ## Scope
 
 ### In scope
 
-- 删除 `rust/crates/saicode-rust-sessiond`
-- 从 `rust/Cargo.toml`、`Cargo.lock`、脚本、README、Spec/Plan、安装链路中移除 `sessiond`
-- 清理 `saicodex`、桥接 prompt、sessiond 专属命令/文案/帮助残留
+- 删除已废弃会话守护 crate
+- 从 `rust/Cargo.toml`、`Cargo.lock`、脚本、README、Spec/Plan、安装链路中移除旧守护路径残留
+- 清理旧第二入口、桥接 prompt、专属命令/文案/帮助残留
 - 更新相关测试与 closeout 脚本
 - 清理任务产生的临时目录与无效残留
 - 在验证通过后收敛 git 工作树到干净状态
@@ -31,8 +31,8 @@
 
 ## Acceptance
 
-1. 仓库内不再存在 `saicode-rust-sessiond` crate 或对它的活跃构建引用
-2. 仓库内不再存在 `saicodex` 用户入口或其系统 prompt 残留
+1. 仓库内不再存在已废弃会话守护 crate 或对它的活跃构建引用
+2. 仓库内不再存在旧第二入口或其系统 prompt 残留
 3. `./bin/saicode` 的 help/status/print/interactive slash 基本面仍可正常工作
 4. 相关 cargo test/build 与 closeout smoke 通过
 5. README 与当前入口、默认模型、测试命令一致
@@ -40,6 +40,6 @@
 
 ## Risks
 
-- `sessiond` 删除后可能暴露出桥接或测试对旧协议的隐式依赖
+- 旧守护路径删除后可能暴露出桥接或测试对旧协议的隐式依赖
 - 当前仓库脏工作树很大，若不分辨临时垃圾和真实 cutover 产物，容易误删
 - 历史 spec 若保留过多旧口径，会继续误导后续维护
