@@ -52,8 +52,6 @@ cargo test --manifest-path native/saicode-launcher/Cargo.toml
 SAICODE_CLOSEOUT_LIVE=1 SAICODE_CLOSEOUT_ACCEPTANCE=1 ./scripts/closeout_preflight.sh
 ```
 
-GitHub CI runs only the offline-reproducible subset: `native/saicode-launcher` tests, Rust workspace tests, and `./scripts/closeout_preflight.sh` without live or acceptance probes.
-
 The TTFT bench inside `rust_tool_acceptance.sh` only counts models that produce a real first token. A model that appears in `/v1/models` but fails or hangs on `/chat/completions` is skipped instead of being treated as a pass.
 
 ## Development

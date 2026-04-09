@@ -52,8 +52,6 @@ cargo test --manifest-path native/saicode-launcher/Cargo.toml
 SAICODE_CLOSEOUT_LIVE=1 SAICODE_CLOSEOUT_ACCEPTANCE=1 ./scripts/closeout_preflight.sh
 ```
 
-GitHub CI 只跑离线可复现子集：`native/saicode-launcher` 测试、Rust workspace 测试、以及不带 live/acceptance 的 `./scripts/closeout_preflight.sh`。
-
 `rust_tool_acceptance.sh` 里的 TTFT bench 只统计真正拿到首 token 的可调用模型。模型如果虽然能出现在 `/v1/models`，但真实 `/chat/completions` 不出 token 或直接 degraded，会被跳过，不算假通过。
 
 ## 开发
